@@ -59,6 +59,11 @@ var auditExtraAllowedKeys = map[string]struct{}{
 	"http_status": {}, "latency_ms": {}, "token_applied": {}, "retryable": {},
 	"event_id": {}, "requested_count": {}, "deleted_events": {}, "deleted_jobs": {},
 	"matched_count": {}, "snapshot_max_id": {}, "filter_hash": {}, "confirm": {},
+	// 风险闸门管理端：只放标量摘要（数量 / 哈希 / 过滤条件），不放原文与正文。
+	"rule_count": {}, "ban_id": {}, "refusal_id": {}, "deleted": {}, "rows": {},
+	"scope": {}, "subject_hash": {}, "duration_hours": {}, "gate": {},
+	"kind": {}, "provider": {}, "request_id": {}, "prompt_hash": {},
+	"user_id": {}, "api_key_id": {}, "group_id": {}, "from": {}, "to": {},
 }
 
 // SetAuditExtra adds allowlisted, scalar details to the current audit entry.

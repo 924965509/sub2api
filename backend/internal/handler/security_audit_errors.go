@@ -26,6 +26,9 @@ func (h *OpenAIGatewayHandler) openAISecurityAuditError(c *gin.Context, decision
 	if decision.Kind == securityaudit.DecisionBlock {
 		errType = "permission_error"
 	}
+	if decision.ClientErrorType != "" {
+		errType = decision.ClientErrorType
+	}
 	c.JSON(securityAuditStatus(decision), gin.H{"error": gin.H{
 		"type": errType, "code": securityAuditErrorCode(decision), "message": securityAuditMessage(decision),
 	}})
@@ -43,6 +46,9 @@ func (h *GatewayHandler) openAISecurityAuditError(c *gin.Context, decision *secu
 	if decision.Kind == securityaudit.DecisionBlock {
 		errType = "permission_error"
 	}
+	if decision.ClientErrorType != "" {
+		errType = decision.ClientErrorType
+	}
 	c.JSON(securityAuditStatus(decision), gin.H{"error": gin.H{
 		"type": errType, "code": securityAuditErrorCode(decision), "message": securityAuditMessage(decision),
 	}})
@@ -56,8 +62,12 @@ func (h *GatewayHandler) responsesSecurityAuditError(c *gin.Context, decision *s
 		h.responsesErrorResponse(c, securityAuditStatus(decision), securityAuditErrorCode(decision), securityAuditMessage(decision))
 		return
 	}
+	errType := "api_error"
+	if decision.ClientErrorType != "" {
+		errType = decision.ClientErrorType
+	}
 	c.JSON(securityAuditStatus(decision), gin.H{"error": gin.H{
-		"type": "api_error", "code": securityAuditErrorCode(decision), "message": securityAuditMessage(decision),
+		"type": errType, "code": securityAuditErrorCode(decision), "message": securityAuditMessage(decision),
 	}})
 }
 
@@ -72,6 +82,9 @@ func (h *GatewayHandler) anthropicSecurityAuditError(c *gin.Context, decision *s
 	errType := "api_error"
 	if decision.Kind == securityaudit.DecisionBlock {
 		errType = "permission_error"
+	}
+	if decision.ClientErrorType != "" {
+		errType = decision.ClientErrorType
 	}
 	c.JSON(securityAuditStatus(decision), gin.H{"type": "error", "error": gin.H{
 		"type": errType, "code": securityAuditErrorCode(decision), "message": securityAuditMessage(decision),
@@ -89,6 +102,9 @@ func (h *OpenAIGatewayHandler) anthropicSecurityAuditError(c *gin.Context, decis
 	errType := "api_error"
 	if decision.Kind == securityaudit.DecisionBlock {
 		errType = "permission_error"
+	}
+	if decision.ClientErrorType != "" {
+		errType = decision.ClientErrorType
 	}
 	c.JSON(securityAuditStatus(decision), gin.H{"type": "error", "error": gin.H{
 		"type": errType, "code": securityAuditErrorCode(decision), "message": securityAuditMessage(decision),

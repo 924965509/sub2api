@@ -161,6 +161,14 @@ func (h *GatewayHandler) SystemOne(c *gin.Context) {
 			}
 		}
 		account := selection.Account
+		if decision := h.checkSelectedRiskGate(c, account); decision != nil && !decision.AllowNextStage {
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+				selection.ReleaseFunc = nil
+			}
+			writeSelectedRiskGateError(c, decision)
+			return
+		}
 
 		accountRelease := selection.ReleaseFunc
 		if !selection.Acquired {

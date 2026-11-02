@@ -177,6 +177,14 @@ func (h *GatewayHandler) GeminiCachedContentsCreate(c *gin.Context) {
 			break
 		}
 		account := selection.Account
+		if decision := h.checkSelectedRiskGate(c, account); decision != nil && !decision.AllowNextStage {
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+				selection.ReleaseFunc = nil
+			}
+			writeSelectedRiskGateError(c, decision)
+			return
+		}
 		if !service.IsGeminiExplicitCacheAccount(account) {
 			if selection.Acquired && selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()

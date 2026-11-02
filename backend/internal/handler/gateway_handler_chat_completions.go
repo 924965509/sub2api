@@ -230,6 +230,14 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			}
 		}
 		account := selection.Account
+		if decision := h.checkSelectedRiskGate(c, account); decision != nil && !decision.AllowNextStage {
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+				selection.ReleaseFunc = nil
+			}
+			writeSelectedRiskGateError(c, decision)
+			return
+		}
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
 		// 4. Acquire account concurrency slot

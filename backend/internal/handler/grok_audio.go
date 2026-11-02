@@ -270,6 +270,14 @@ func (h *OpenAIGatewayHandler) GrokVoice(c *gin.Context, endpoint string) {
 			return
 		}
 		account := selection.Account
+		if decision := h.checkSelectedRiskGate(c, account); decision != nil && !decision.AllowNextStage {
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+				selection.ReleaseFunc = nil
+			}
+			writeSelectedRiskGateError(c, decision)
+			return
+		}
 		var started bool
 		release, status := h.acquireResponsesAccountSlot(c, apiKey.GroupID, "", selection, false, &started, reqLog)
 		if status == openAISlotAcquireProfitVetoed {

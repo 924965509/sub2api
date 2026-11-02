@@ -392,6 +392,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 			}
 			account := selection.Account
+			if decision := h.checkSelectedRiskGate(c, account); decision != nil && !decision.AllowNextStage {
+				if selection.ReleaseFunc != nil {
+					selection.ReleaseFunc()
+					selection.ReleaseFunc = nil
+				}
+				writeSelectedRiskGateError(c, decision)
+				return
+			}
 			setOpsSelectedAccount(c, account.ID, account.Platform)
 
 			// 检查请求拦截（预热请求、SUGGESTION MODE等）
@@ -724,6 +732,14 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				}
 			}
 			account := selection.Account
+			if decision := h.checkSelectedRiskGate(c, account); decision != nil && !decision.AllowNextStage {
+				if selection.ReleaseFunc != nil {
+					selection.ReleaseFunc()
+					selection.ReleaseFunc = nil
+				}
+				writeSelectedRiskGateError(c, decision)
+				return
+			}
 			setOpsSelectedAccount(c, account.ID, account.Platform)
 
 			// [DEBUG-STICKY] 打印账号选择结果

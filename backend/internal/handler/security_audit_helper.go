@@ -2,9 +2,12 @@ package handler
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"net/http"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/riskgate"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -95,6 +98,15 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 		return &decision
 	}
 	request := buildSecurityAuditRequest(c, apiKey, subject, protocol, model, body, stage)
+	// 把请求正文与身份写进请求上下文，供 service 层在上游拒答时上报风险闸门。
+	// Body 只读共享不复制；WebSocket 每轮都会覆盖成当轮正文。
+	c.Request = c.Request.WithContext(ctxkey.WithUpstreamObservation(c.Request.Context(), ctxkey.UpstreamObservation{
+		RequestID: request.RequestID, UserID: request.UserID, APIKeyID: request.APIKeyID,
+		GroupID: request.GroupID, Provider: request.Provider, Endpoint: request.Endpoint,
+		Protocol: request.Protocol, Model: request.Model, Body: request.Body, Stage: request.Stage, AuditTurn: request.AuditTurn,
+		InboundDeviceID: request.InboundDeviceID, ClientFingerprint: request.ClientFingerprint,
+		SelectedAccountID: request.SelectedAccountID, SelectedAccountPlan: request.SelectedAccountPlan,
+	}))
 	if isSecurityAuditWebSocketStage(request.Stage) {
 		if turnNo, ok := securityAuditWSTurn(c); ok {
 			bodyHash := sha256.Sum256(body)
@@ -174,7 +186,58 @@ func buildSecurityAuditRequest(c *gin.Context, apiKey *service.APIKey, subject m
 	if request.Stage == "" {
 		request.Stage = "http"
 	}
+	request.AuditTurn = riskAuditTurn(c, request.Stage)
+	request.InboundDeviceID = inboundDeviceID(c, body)
+	request.ClientFingerprint = riskgate.FingerprintFromHeaders(c.Request.Header)
 	return request
+}
+
+func inboundDeviceID(c *gin.Context, body []byte) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	var root map[string]any
+	_ = json.Unmarshal(body, &root)
+	valid := func(text string) string {
+		text = strings.TrimSpace(text)
+		if len(text) < 8 || len(text) > 200 {
+			return ""
+		}
+		return text
+	}
+	metadata, _ := root["metadata"].(map[string]any)
+	if id := valid(identityDeviceID(metadata["user_id"])); id != "" {
+		return id
+	}
+	for _, key := range []string{"device_id", "deviceId"} {
+		if value, ok := root[key].(string); ok {
+			if id := valid(value); id != "" {
+				return id
+			}
+		}
+	}
+	return valid(c.GetHeader("X-Kin-Device-ID"))
+}
+
+func identityDeviceID(value any) string {
+	if text, ok := value.(string); ok {
+		var parsed map[string]any
+		if json.Unmarshal([]byte(text), &parsed) == nil {
+			value = parsed
+		} else {
+			return ""
+		}
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		return ""
+	}
+	for _, key := range []string{"device_id", "deviceId"} {
+		if text, ok := object[key].(string); ok && strings.TrimSpace(text) != "" {
+			return strings.TrimSpace(text)
+		}
+	}
+	return ""
 }
 
 func securityAuditStatus(decision *securityaudit.Decision) int {

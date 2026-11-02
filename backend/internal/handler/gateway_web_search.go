@@ -175,6 +175,14 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 			break
 		}
 
+		if decision := h.checkSelectedRiskGate(c, selected.Account); decision != nil && !decision.AllowNextStage {
+			if selected.ReleaseFunc != nil {
+				selected.ReleaseFunc()
+				selected.ReleaseFunc = nil
+			}
+			writeSelectedRiskGateError(c, decision)
+			return
+		}
 		release, acquireOK, acquireErr := h.acquireWebSearchAccountSlot(c, selected)
 		if !acquireOK {
 			// First hop: surface concurrency errors; later hops try another account.

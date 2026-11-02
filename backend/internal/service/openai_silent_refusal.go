@@ -244,6 +244,7 @@ func newOpenAISilentRefusalFailoverError(c *gin.Context, account *Account, upstr
 		accountName = account.Name
 		platform = account.Platform
 	}
+	NotifyUpstreamRefusal(c, "silent_refusal", http.StatusBadGateway)
 
 	setOpsUpstreamError(c, http.StatusBadGateway, openAISilentRefusalUpstreamMessage, "")
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -283,6 +284,7 @@ func newOpenAIResponsesEmptyCompletedFailoverError(c *gin.Context, account *Acco
 		accountName = account.Name
 		platform = account.Platform
 	}
+	NotifyUpstreamRefusal(c, "silent_refusal", http.StatusBadGateway)
 
 	setOpsUpstreamError(c, http.StatusBadGateway, openAIResponsesEmptyCompletedMessage, "")
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{

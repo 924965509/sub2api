@@ -127,6 +127,9 @@ func RegisterAdminRoutes(
 		// 独立提示词输入审计
 		registerPromptAuditRoutes(admin, h)
 
+		// 风险闸门（蒸馏/破限/重放拦截，默认关闭）
+		registerRiskGateRoutes(admin, h)
+
 		// 邀请返利（专属用户管理）
 		registerAffiliateRoutes(admin, h)
 
@@ -148,6 +151,53 @@ func registerPromptAuditRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		promptAudit.POST("/events/batch-delete", h.Admin.PromptAudit.BatchDelete)
 		promptAudit.POST("/events/delete-preview", h.Admin.PromptAudit.DeletePreview)
 		promptAudit.POST("/events/delete-by-filter", h.Admin.PromptAudit.DeleteByFilter)
+	}
+}
+
+// registerRiskGateRoutes 注册风险闸门的管理接口：配置读写、运行态、探测，
+// 以及规则/封禁/事件/拒答语料的 CRUD 与 CSV 导出。
+//
+// 注意路由顺序：/events/delete-preview 与 /events/delete-by-filter 必须放在
+// /events/:id 之前，否则会被 :id 吞掉。
+func registerRiskGateRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	riskGate := admin.Group("/risk-gate")
+	{
+		riskGate.GET("/config", h.Admin.RiskGate.GetConfig)
+		riskGate.PUT("/config", h.Admin.RiskGate.UpdateConfig)
+		riskGate.GET("/status", h.Admin.RiskGate.GetStatus)
+		riskGate.GET("/stats", h.Admin.RiskGate.GetStats)
+		riskGate.GET("/ruleset", h.Admin.RiskGate.GetRuleSet)
+		riskGate.PUT("/ruleset", h.Admin.RiskGate.UpdateRuleSet)
+		riskGate.POST("/rules/validate", h.Admin.RiskGate.ValidateRules)
+		riskGate.GET("/scope-inventory", h.Admin.RiskGate.GetScopeInventory)
+		riskGate.POST("/classifier/models", h.Admin.RiskGate.ListClassifierModels)
+		riskGate.GET("/classifier/usage", h.Admin.RiskGate.GetClassifierUsage)
+		riskGate.DELETE("/bans", h.Admin.RiskGate.ClearBans)
+		// 决策模型端点探测：一次真实调用，失败仍返回 200 并在 result.error 里说明
+		riskGate.POST("/classifier/probe", h.Admin.RiskGate.ProbeClassifier)
+
+		// 自定义规则全量读写
+		riskGate.GET("/rules", h.Admin.RiskGate.ListRules)
+		riskGate.PUT("/rules", h.Admin.RiskGate.SaveRules)
+
+		// 封禁管理
+		riskGate.GET("/bans", h.Admin.RiskGate.ListBans)
+		riskGate.POST("/bans", h.Admin.RiskGate.CreateBan)
+		riskGate.DELETE("/bans/:id", h.Admin.RiskGate.DeleteBan)
+
+		// 事件查询与按条件删除（固定路径必须先于 :id 注册）
+		riskGate.GET("/events", h.Admin.RiskGate.ListEvents)
+		riskGate.POST("/events/delete-preview", h.Admin.RiskGate.DeleteEventsPreview)
+		riskGate.POST("/events/delete-by-filter", h.Admin.RiskGate.DeleteEventsByFilter)
+		riskGate.GET("/events/:id", h.Admin.RiskGate.GetEvent)
+
+		// 拒答语料管理
+		riskGate.GET("/refusals", h.Admin.RiskGate.ListRefusals)
+		riskGate.DELETE("/refusals", h.Admin.RiskGate.DeleteAllRefusals)
+		riskGate.DELETE("/refusals/:id", h.Admin.RiskGate.DeleteRefusal)
+
+		// 事件 CSV 导出
+		riskGate.GET("/export", h.Admin.RiskGate.ExportEvents)
 	}
 }
 

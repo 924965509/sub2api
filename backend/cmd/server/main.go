@@ -168,6 +168,20 @@ func runMainServer() {
 		}
 	}
 
+	if app.RiskGate != nil {
+		// 风险闸门默认 mode=off：启动只做一次配置载入，失败不影响启动。
+		if err := app.RiskGate.Start(context.Background()); err != nil {
+			log.Printf("Risk gate started in degraded state: %v", err)
+		}
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := app.RiskGate.Shutdown(shutdownCtx); err != nil {
+				log.Printf("Risk gate shutdown failed: %v", err)
+			}
+		}()
+	}
+
 	// 启动服务器
 	go func() {
 		if err := app.Server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

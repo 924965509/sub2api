@@ -20,6 +20,11 @@ const (
 	ErrorCodeEncryptionKeyRequired = "prompt_audit_encryption_key_required"
 	ErrorCodeRequiresEnabled       = "prompt_guard_requires_audit_enabled"
 
+	// 风险闸门错误码：与提示词审计并列，不改动既有取值。
+	ErrorCodeRiskGateBlocked     = "risk_gate_blocked"
+	ErrorCodeRiskGateBanned      = "risk_gate_banned"
+	ErrorCodeRiskGateUnavailable = "risk_gate_unavailable"
+
 	DefaultGuardModel = "sileader/qwen3guard:0.6b"
 )
 
@@ -81,6 +86,19 @@ type Request struct {
 	Model      string
 	Body       []byte
 	Stage      string
+	// InboundDeviceID is a caller-reported (not hardware-attested) device/session identity. It
+	// is never inferred from API keys, IPs, user agents, or prompt content.
+	InboundDeviceID   string
+	ClientFingerprint string
+	// SelectedAccountID/Plan are populated only by protocol paths that have
+	// completed account selection. A zero value means selection has not yet
+	// happened and account-scoped checks must not guess.
+	SelectedAccountID       int64
+	SelectedAccountName     string
+	SelectedAccountEmail    string
+	SelectedAccountPlatform string
+	AuditTurn               string
+	SelectedAccountPlan     string
 }
 
 func (r Request) Clone() Request {
@@ -157,13 +175,29 @@ type LegacyDecision struct {
 }
 
 type Decision struct {
-	Kind           DecisionKind    `json:"kind"`
-	HTTPStatus     int             `json:"http_status"`
-	ErrorCode      string          `json:"error_code,omitempty"`
-	ClientMessage  string          `json:"client_message,omitempty"`
-	Legacy         *LegacyDecision `json:"legacy,omitempty"`
-	Prompt         *PromptDecision `json:"prompt,omitempty"`
-	AllowNextStage bool            `json:"allow_next_stage"`
+	ClientErrorType string            `json:"client_error_type,omitempty"`
+	Kind            DecisionKind      `json:"kind"`
+	HTTPStatus      int               `json:"http_status"`
+	ErrorCode       string            `json:"error_code,omitempty"`
+	ClientMessage   string            `json:"client_message,omitempty"`
+	Legacy          *LegacyDecision   `json:"legacy,omitempty"`
+	Prompt          *PromptDecision   `json:"prompt,omitempty"`
+	RiskGate        *RiskGateDecision `json:"risk_gate,omitempty"`
+	AllowNextStage  bool              `json:"allow_next_stage"`
+}
+
+// RiskGateDecision 是风险闸门的命中摘要，只回传命中闸、原因与脱敏证据，
+// 绝不携带请求正文原文。
+type RiskGateDecision struct {
+	Gate       string  `json:"gate"`
+	Category   string  `json:"category,omitempty"`
+	Reason     string  `json:"reason,omitempty"`
+	RuleID     int64   `json:"rule_id,omitempty"`
+	Score      float64 `json:"score,omitempty"`
+	Evidence   string  `json:"evidence,omitempty"`
+	BanScope   string  `json:"ban_scope,omitempty"`
+	Banned     bool    `json:"banned,omitempty"`
+	WouldBlock bool    `json:"would_block,omitempty"`
 }
 
 type IssueSummary struct {

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -26,9 +27,13 @@ const (
 // separate from the final outbound request tier until usage recording resolves
 // the billable tier for the selected credential protocol.
 type upstreamResponseModelObserver struct {
-	first    string
-	terminal string
-	conflict bool
+	// Capture the request context, not the pooled Gin context. Refusal evidence
+	// is best-effort and independent of response-model selection and billing.
+	refusalContext  context.Context
+	refusalObserved bool
+	first           string
+	terminal        string
+	conflict        bool
 
 	// firstTier holds the first non-terminal tier declaration; it is discarded
 	// when later non-terminal declarations disagree. terminalTier comes from a
@@ -69,6 +74,7 @@ func normalizeObservedUpstreamResponseModel(model string) string {
 }
 
 func (o *upstreamResponseModelObserver) ObserveOpenAI(payload []byte, eventType string) {
+	o.observeRefusal(payload)
 	model := firstValidTrimmedGJSONString(payload, "response.model", "model")
 	terminal := isUpstreamResponseModelTerminalEvent(eventType)
 	o.Observe(model, terminal)
@@ -88,6 +94,7 @@ func (o *upstreamResponseModelObserver) ObserveOpenAI(payload []byte, eventType 
 }
 
 func (o *upstreamResponseModelObserver) ObserveAnthropic(payload []byte) {
+	o.observeRefusal(payload)
 	model := firstValidTrimmedGJSONString(payload, "message.model", "model")
 	o.Observe(model, false)
 	// usage.speed travels with the message object (message_start in streams,
@@ -160,6 +167,7 @@ func normalizeObservedAnthropicSpeed(raw string) string {
 }
 
 func (o *upstreamResponseModelObserver) ObserveGemini(payload []byte) {
+	o.observeRefusal(payload)
 	model := firstValidTrimmedGJSONString(
 		payload,
 		"modelVersion",
@@ -169,6 +177,13 @@ func (o *upstreamResponseModelObserver) ObserveGemini(payload []byte) {
 	// Gemini streaming has no universal terminal event carrying modelVersion;
 	// treating each declaration as terminal retains the latest chunk.
 	o.Observe(model, true)
+}
+
+func (o *upstreamResponseModelObserver) observeRefusal(payload []byte) {
+	if o == nil || o.refusalContext == nil || o.refusalObserved {
+		return
+	}
+	o.refusalObserved = observeStructuredUpstreamRefusal(o.refusalContext, payload)
 }
 
 func (o *upstreamResponseModelObserver) Model() string {
@@ -187,6 +202,9 @@ func (o *upstreamResponseModelObserver) Conflict() bool {
 
 func beginUpstreamResponseModelObservation(c *gin.Context) *upstreamResponseModelObserver {
 	observer := &upstreamResponseModelObserver{}
+	if c != nil && c.Request != nil {
+		observer.refusalContext = c.Request.Context()
+	}
 	if c != nil {
 		c.Set(upstreamResponseModelObserverContextKey, observer)
 	}

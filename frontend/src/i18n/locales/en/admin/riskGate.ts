@@ -1,0 +1,425 @@
+import alignment from "./riskGateAlignment";
+
+const original = {
+  riskGate: {
+    title: "Risk Gate",
+    description:
+      "Reject requests that try to harvest the upstream models: distillation fingerprints, hard regex, refusal replay and a decision-model check all run before account selection, billing and any upstream call. The ban gate always runs first and cannot be disabled.",
+    configVersion: "Config version v{version}",
+    updatedAt: "Updated {time}",
+    alwaysOn: "Always enforced",
+    tabs: {
+      runtime: "Runtime",
+      config: "Gate configuration",
+      rules: "Custom rules",
+      bans: "Bans",
+      events: "Event workbench",
+      refusals: "Refusal corpus",
+    },
+    actions: {
+      refresh: "Refresh runtime",
+      retry: "Retry",
+      reset: "Discard changes",
+      save: "Save configuration",
+      saving: "Saving…",
+      exportCsv: "Export CSV",
+      exporting: "Exporting…",
+    },
+    mode: { off: "Off", observe: "Observe only", blocking: "Blocking" },
+    modeHints: {
+      off: "Fully disabled: each request only does one atomic read — no database query, no Redis lookup, no HTTP call and no event written.",
+      observe:
+        "Observe only: every hit is recorded as would_block and nothing is rejected. Use it to measure false positives before switching to blocking.",
+      blocking:
+        "Blocking: a hit rejects the request before account selection, billing and any upstream call.",
+    },
+    gates: {
+      ban: "Ban (identity)",
+      distill: "Distillation / fingerprint",
+      regex: "Hard regex",
+      refusal_cache: "Refusal cache",
+      decision_model: "Decision model",
+    },
+    gateHints: {
+      ban: "Banned identities are rejected before every other gate; this gate cannot be turned off.",
+      distill:
+        "Matches harvesting wrappers, structural harvest signals and known question fingerprints.",
+      regex:
+        "Matches built-in risk categories and your own patterns; the cheapest gate after the ban lookup.",
+      refusal_cache:
+        "Matches prompts the upstream provider has already refused, using shingle similarity.",
+      decision_model:
+        "Asks a classifier model whether the prompt tries to harvest the upstream model. The most expensive gate, so it runs last.",
+    },
+    runtime: {
+      title: "Runtime",
+      description:
+        "Live snapshot from the server. Unsaved draft changes are not reflected here.",
+      mode: "Mode",
+      effectiveGates: "Effective gates",
+      evaluated: "Evaluated requests",
+      blocked: "Blocked",
+      wouldBlock: "Would block",
+      banCount: "Active bans",
+      rulesCount: "Custom rules",
+      configVersion: "Active config version",
+      lastError: "Last error",
+      noError: "No recent error.",
+      none: "None",
+      counters: "Gate counters (this process)",
+      checkedAt: "Checked at {time}",
+    },
+    counters: {
+      evaluated: "Evaluated",
+      allowed: "Allowed",
+      blocked: "Blocked",
+      would_block: "Would block",
+      banned: "Banned",
+      ban_hits: "Ban gate hits",
+      distill_hits: "Distillation hits",
+      regex_hits: "Regex hits",
+      refusal_cache_hits: "Refusal cache hits",
+      decision_model_hits: "Decision model hits",
+      classifier_errors: "Classifier errors",
+    },
+    config: {
+      title: "Gate configuration",
+      description:
+        "Saving bumps the config version; a stale expected version is rejected with a conflict so two administrators never overwrite each other silently.",
+      mode: "Run mode",
+      modeHint:
+        "Pick the global behaviour; individual gates can still be switched off below.",
+      gates: "Gate toggles",
+      gatesHint:
+        "The ban gate is always enforced and is listed for clarity only.",
+      distill: {
+        title: "Distillation / fingerprint gate",
+        description:
+          "Matches harvesting wrappers and known question fingerprints before any expensive gate runs.",
+        hardNeedles: "Hard needles (always scanned)",
+        needles: "Needles (skipped for official clients)",
+        fingerprints: "Question fingerprints",
+        listHint: "One entry per line. Empty lines are ignored.",
+        skipOfficial: "Skip official Claude Code clients",
+        skipZero: "Skip zero-injection requests (no system body)",
+        minMaxTokens:
+          "Structural harvest floor (max_tokens and thinking budget)",
+        contestPattern: "Contest body pattern (empty disables this check)",
+      },
+      regex: {
+        title: "Hard regex gate",
+        description:
+          "Cheap pattern matching across built-in categories and your own custom rules.",
+        categories: "Built-in categories",
+        customRules: "Also apply custom rules from the Custom rules tab",
+        maxInputBytes: "Max scanned bytes",
+        expandBase64: "Decode base64 blocks before scanning",
+        blockMessage: "Block message returned to the caller",
+        blockMessagePlaceholder: "Leave blank to use the default message",
+      },
+      refusalCache: {
+        title: "Refusal cache gate",
+        description:
+          "Matches prompts whose upstream refusal was already recorded; similarity is measured on shingles of the normalized prompt.",
+        enabled: "Enable the refusal cache gate",
+        similarityThreshold: "Similarity threshold (0-1)",
+        minShingleRunes: "Minimum shingle length (runes)",
+      },
+      decisionModel: {
+        title: "Decision model gate",
+        description:
+          "Asks an OpenAI-compatible classifier whether the prompt tries to harvest the upstream model. Endpoints are tried in order.",
+        enabled: "Enable the decision model gate",
+        threshold: "Hit threshold (0-1)",
+        timeoutMs: "Timeout (ms)",
+        maxConcurrent: "Max concurrent calls",
+        onUnavailable: "When every endpoint is unavailable",
+        onUnavailablePass: "Allow and record the miss",
+        onUnavailableFailClosed: "Reject (fail closed)",
+        onUnavailablePassHint:
+          "Allows the request upstream and writes an event, so an outage shows up as missed detections instead of a hard failure. Choose it when availability matters more than strictness.",
+        onUnavailableFailClosedHint:
+          "Rejects matching traffic while no endpoint is reachable. Choose it when a classifier outage must not open the gate.",
+      },
+      ban: {
+        title: "Automatic bans",
+        description:
+          "A hit on one of the selected gates bans the chosen identity for the configured duration.",
+        scope: "Ban scope",
+        scopeApiKey: "API Key",
+        scopeUser: "User",
+        scopeClientFingerprint: "Client fingerprint",
+        scopeHint:
+          "Client fingerprints are only recorded by default; enforce them manually from the Bans tab.",
+        onDistill: "Ban on distillation / fingerprint hits",
+        onRegex: "Ban on hard regex hits",
+        onDecisionModel: "Ban on decision-model hits",
+        durationHours: "Ban duration (hours, 0 = permanent)",
+        durationHint:
+          "The same values apply to bans the risk gate creates automatically.",
+      },
+      scope: {
+        title: "Enforcement scope",
+        description:
+          "Only requests in this scope are evaluated; everything outside it bypasses the gate.",
+        allGroups: "All groups",
+        groupIds: "Group IDs (one per line)",
+        allProviders: "All providers",
+        providers: "Providers (one per line)",
+        retentionDays: "Event retention (days)",
+        retentionHint:
+          "Events older than this are removed by the retention job.",
+      },
+    },
+    classifier: {
+      title: "Classifier endpoints",
+      description:
+        "Tried in the configured order. Probes run from the server network and never store the probe payload.",
+      add: "Add endpoint",
+      empty: "No classifier endpoints configured yet.",
+      name: "Name",
+      id: "Stable ID",
+      baseUrl: "Base URL",
+      model: "Model",
+      timeout: "Timeout (ms)",
+      apiKey: "API Key",
+      keyConfigured: "API Key configured",
+      keyMissing: "No API Key",
+      secretHint:
+        "Leave blank to keep the saved key; typing a value replaces it. The stored key is never shown again.",
+      enabled: "Endpoint enabled",
+      probe: "Probe",
+      probing: "Probing…",
+      probeOk: "Score {score} · {category} · {latency} ms",
+      probeFailed: "Probe failed: {error}",
+      remove: "Remove",
+      removeConfirm:
+        'Remove endpoint "{name}" from the draft? It takes effect after saving.',
+    },
+    rules: {
+      title: "Custom rules",
+      description:
+        "The whole table is replaced on save. Inline edits stay local until you save, and invalid rows cannot be saved.",
+      add: "Add rule",
+      save: "Save rules",
+      empty: "No custom rules yet.",
+      gate: "Gate",
+      category: "Category",
+      pattern: "Pattern",
+      isRegex: "Regular expression",
+      action: "Action",
+      enabled: "Enabled",
+      sortOrder: "Order",
+      ruleDescription: "Description",
+      patternPlaceholder: "Plain text or a regular expression",
+      invalid: "Some rows are invalid; fix them before saving.",
+      remove: "Remove rule",
+      saved: "Custom rules saved.",
+      errors: {
+        patternRequired: "The pattern is required.",
+        patternTooLong: "The pattern exceeds 2048 bytes.",
+        regexInvalid: "The regular expression cannot be compiled.",
+        gateInvalid: "The gate must be regex or distill.",
+        categoryInvalid: "The category is not supported.",
+        actionInvalid: "The action must be block or observe.",
+      },
+    },
+    bans: {
+      title: "Bans",
+      description:
+        "Banned identities are rejected before every other gate. Releasing a ban takes effect immediately and cannot be undone.",
+      scope: "Scope",
+      subject: "Subject",
+      reason: "Reason",
+      gate: "Gate",
+      hitCount: "Hits",
+      bannedAt: "Banned at",
+      expiresAt: "Expires",
+      createdBy: "Created by",
+      durationPermanent: "Permanent",
+      durationExpired: "Expired",
+      durationHours: "In {hours} h",
+      durationDays: "In {days} d",
+      activeOnly: "Active only",
+      filterScope: "Filter by scope",
+      filterSubject: "Filter by subject",
+      empty: "No bans match the current filter.",
+      create: "Create ban",
+      creating: "Creating…",
+      release: "Release",
+      releaseConfirmTitle: "Release this ban?",
+      releaseConfirmMessage:
+        "The identity becomes usable again immediately. Releasing does not remove the events it produced.",
+      releaseWarning:
+        "Releasing a ban is immediate and irreversible; re-ban the identity if it was a mistake.",
+      subjectPlaceholder: "API Key ID, user ID or fingerprint",
+      reasonPlaceholder: "Why this identity is banned",
+      durationHoursField: "Duration (hours, 0 = permanent)",
+      gateField: "Triggered gate",
+      gateManual: "manual",
+      created: "Ban created.",
+      released: "Ban released.",
+      forms: {
+        title: "New ban",
+        submit: "Create ban",
+        invalid: "Scope, subject and duration are required.",
+      },
+    },
+    events: {
+      title: "Event workbench",
+      description:
+        "Every gate decision with redacted evidence. Deleting by filter requires at least one condition.",
+      kind: "Kind",
+      gate: "Gate",
+      provider: "Provider",
+      requestId: "Request ID",
+      promptHash: "Prompt hash",
+      userId: "User ID",
+      apiKeyId: "API Key ID",
+      groupId: "Group ID",
+      from: "From",
+      to: "To",
+      deleteByFilter: "Delete by filter",
+      empty: "No events match the current filter.",
+      time: "Time",
+      route: "Endpoint / model",
+      result: "Kind / gate",
+      action: "Action",
+      score: "Score",
+      evidence: "Redacted evidence",
+      view: "View",
+      kinds: {
+        blocked: "Blocked",
+        allowed: "Allowed",
+        upstream_pass: "Upstream pass",
+        upstream_refusal: "Upstream refusal",
+      },
+      actions: { none: "None", banned: "Banned", would_block: "Would block" },
+      detailTitle: "Risk gate event",
+      detail: {
+        requestId: "Request ID",
+        promptHash: "Prompt hash",
+        kind: "Kind",
+        gate: "Gate",
+        ruleId: "Rule ID",
+        reason: "Reason",
+        score: "Score",
+        action: "Action",
+        evidence: "Redacted evidence",
+        evidenceHint:
+          "Evidence is stored redacted; the raw prompt is never persisted by the risk gate.",
+        identity: "User / API Key / group",
+        route: "Endpoint / model / protocol",
+        createdAt: "Recorded at",
+        close: "Close",
+      },
+      filterDeleteTitle: "Delete events by filter",
+      filterDeleteDescription:
+        "Only events matching the filter below are deleted. Generate a preview to see the count before confirming.",
+      filterDeletePreview: "Preview",
+      filterDeletePreviewing: "Previewing…",
+      filterDeleteCount: "{total} events match the current filter.",
+      filterDeleteEmpty:
+        "No preview yet. Generate one to see how many events would be deleted.",
+      filterDeleteConfirm: "Delete permanently",
+      filterDeleteWarning:
+        "The count is a snapshot; events created after the preview are kept.",
+      filterDeleteNoFilter:
+        "Add at least one filter condition first — the backend rejects unconditional deletion.",
+      filterDeleteNoMatch:
+        "The current filter matches 0 events, so there is nothing to delete.",
+      deleted: "Deleted {count} events.",
+    },
+    refusals: {
+      title: "Refusal corpus",
+      description:
+        "Prompts the upstream already refused. The refusal-cache gate compares new prompts against this corpus.",
+      provider: "Provider",
+      model: "Model",
+      promptHash: "Prompt hash",
+      normalizedPrompt: "Normalized prompt (redacted)",
+      source: "Source",
+      createdAt: "Recorded at",
+      empty: "The refusal corpus is empty.",
+      delete: "Delete",
+      deleteConfirmTitle: "Delete this corpus entry?",
+      deleteConfirmMessage:
+        "The entry stops participating in similarity matching immediately.",
+      clearAll: "Clear corpus",
+      clearConfirmTitle: "Clear the whole refusal corpus?",
+      clearConfirmMessage:
+        "All {count} entries are removed and the in-memory index is rebuilt. Previously refused prompts will no longer be blocked by the cache gate.",
+      clearWarning:
+        "Clearing the corpus weakens the refusal-cache gate until new refusals are recorded.",
+      deleted: "Corpus entry deleted.",
+      cleared: "Cleared {count} corpus entries.",
+      filterProvider: "Filter by provider",
+      filterSource: "Filter by source",
+      filterPromptHash: "Filter by prompt hash",
+      sources: {
+        upstream_refusal: "Upstream refusal",
+        silent_refusal: "Silent refusal",
+      },
+    },
+    saveBar: {
+      dirty: "Unsaved changes",
+      synced: "Configuration synced",
+    },
+    messages: {
+      saved: "Risk Gate configuration saved.",
+      exported: "Exported {filename}.",
+      rulesSaved: "Custom rules saved.",
+      banCreated: "Ban created.",
+      banReleased: "Ban released.",
+      refusalDeleted: "Corpus entry deleted.",
+      refusalsCleared: "Cleared {count} corpus entries.",
+      eventsDeleted: "Deleted {count} events.",
+      reloadedAfterConflict:
+        "Another administrator changed the configuration; the server version was reloaded and your draft was replaced.",
+    },
+    errors: {
+      loadConfig: "Unable to load the Risk Gate configuration.",
+      loadStatus: "Unable to load the Risk Gate runtime.",
+      loadRules: "Unable to load custom rules.",
+      loadBans: "Unable to load bans.",
+      loadEvents: "Unable to load events.",
+      loadRefusals: "Unable to load the refusal corpus.",
+      loadDetail: "Unable to load the event detail.",
+      saveConfig: "Unable to save the configuration.",
+      saveRules: "Unable to save custom rules.",
+      probe: "Classifier probe failed to start.",
+      createBan: "Unable to create the ban.",
+      releaseBan: "Unable to release the ban.",
+      deleteRefusal: "Unable to delete the corpus entry.",
+      clearRefusals: "Unable to clear the corpus.",
+      previewDelete: "Unable to build the deletion preview.",
+      deleteEvents: "Unable to delete events.",
+      export: "Unable to export events.",
+      decisionModelEndpointRequired:
+        "Enable at least one classifier endpoint before turning on the decision model gate.",
+      gateRequired: "Enable at least one gate, or switch the mode back to off.",
+      groupRequired:
+        "Select at least one group, or switch the scope back to all groups.",
+      risk_gate_config_conflict:
+        "Another administrator changed this configuration. The server version was reloaded; review your draft before saving again.",
+      risk_gate_invalid_config:
+        "The configuration was rejected by the server validation.",
+      risk_gate_invalid_rule: "The server rejected one of the custom rules.",
+      risk_gate_invalid_ban: "The server rejected the ban parameters.",
+      risk_gate_filter_required:
+        "Deletion needs at least one filter condition.",
+      risk_gate_config_unavailable:
+        "The Risk Gate configuration is not available yet.",
+    },
+  },
+};
+
+export default {
+  riskGate: {
+    ...original.riskGate,
+    ...alignment,
+    actions: { ...original.riskGate.actions, ...alignment.actions },
+    errors: { ...original.riskGate.errors, ...alignment.errors },
+    saveBar: { ...original.riskGate.saveBar, ...alignment.saveBar },
+  },
+};

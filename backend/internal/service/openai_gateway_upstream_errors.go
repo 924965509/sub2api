@@ -598,6 +598,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 			Body:           truncateString(string(body), 4096),
 			UpstreamStatus: resp.StatusCode,
 		})
+		NotifyUpstreamRefusal(c, "upstream_refusal", resp.StatusCode)
 		setOpsUpstreamError(c, resp.StatusCode, cyberMsg, truncateString(string(body), 2048))
 		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 		contentType := resp.Header.Get("Content-Type")
@@ -611,6 +612,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		return nil, fmt.Errorf("openai cyber_policy: %s", cyberMsg)
 	}
 	if account != nil && account.Platform == PlatformGrok && isGrokContentPolicyRejection(resp.StatusCode, body) {
+		NotifyUpstreamRefusal(c, "upstream_refusal", resp.StatusCode)
 		clientMsg := grokContentPolicyClientMessage(body)
 		setOpsUpstreamError(c, resp.StatusCode, clientMsg, truncateString(string(body), 2048))
 		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -850,6 +852,7 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 			Body:           truncateString(string(body), 4096),
 			UpstreamStatus: resp.StatusCode,
 		})
+		NotifyUpstreamRefusal(c, "upstream_refusal", resp.StatusCode)
 		setOpsUpstreamError(c, resp.StatusCode, cyberMsg, truncateString(string(body), 2048))
 		clientMsg := cyberMsg
 		if clientMsg == "" {
@@ -862,6 +865,7 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 		return nil, fmt.Errorf("openai cyber_policy: %s", cyberMsg)
 	}
 	if account != nil && account.Platform == PlatformGrok && isGrokContentPolicyRejection(resp.StatusCode, body) {
+		NotifyUpstreamRefusal(c, "upstream_refusal", resp.StatusCode)
 		clientMsg := grokContentPolicyClientMessage(body)
 		setOpsUpstreamError(c, resp.StatusCode, clientMsg, truncateString(string(body), 2048))
 		MarkResponseCommitted(c)

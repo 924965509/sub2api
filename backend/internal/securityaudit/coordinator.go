@@ -17,18 +17,36 @@ type PromptEngine interface {
 	Evaluate(ctx context.Context, req Request) (*PromptDecision, error)
 }
 
+type PreGate interface {
+	// Decide 返回非 nil 且 AllowNextStage=false 时短路后续闸门；返回 nil 表示不干预。
+	Decide(ctx context.Context, req Request) *Decision
+}
+
 type Coordinator struct {
-	legacy LegacyEngine
-	prompt PromptEngine
+	preGate PreGate
+	legacy  LegacyEngine
+	prompt  PromptEngine
 }
 
 func NewCoordinator(legacy LegacyEngine, prompt PromptEngine) *Coordinator {
 	return &Coordinator{legacy: legacy, prompt: prompt}
 }
 
+// WithPreGate 安装前置闸门。未安装（默认）时协调器行为与历史版本完全一致。
+func (c *Coordinator) WithPreGate(preGate PreGate) *Coordinator {
+	if c == nil {
+		return c
+	}
+	c.preGate = preGate
+	return c
+}
+
 func (c *Coordinator) Check(ctx context.Context, req Request) Decision {
 	if c == nil {
 		return allowDecision(nil, nil)
+	}
+	if blocked := c.runPreGate(ctx, req); blocked != nil {
+		return *blocked
 	}
 	mode := ModeOff
 	if c.prompt != nil {
@@ -47,6 +65,26 @@ func (c *Coordinator) Check(ctx context.Context, req Request) Decision {
 		legacy, _ := c.checkLegacy(ctx, req)
 		return prioritize(legacy, nil)
 	}
+}
+
+// runPreGate 调用前置闸门。只有明确要求短路（AllowNextStage=false）时才返回非 nil 决策，
+// 其余情况（未安装、返回 nil、允许继续）一律返回 nil 让既有流程继续。
+// 前置闸门内部 panic 时降级为不干预，避免闸门自身的缺陷把正常请求打成 500。
+func (c *Coordinator) runPreGate(ctx context.Context, req Request) (decision *Decision) {
+	preGate := c.preGate
+	if preGate == nil {
+		return nil
+	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			decision = nil
+		}
+	}()
+	result := preGate.Decide(ctx, req)
+	if result == nil || result.AllowNextStage {
+		return nil
+	}
+	return result
 }
 
 func (c *Coordinator) checkBlocking(ctx context.Context, req Request) Decision {
@@ -136,4 +174,24 @@ func unavailablePromptDecision(code string) *PromptDecision {
 		kind = DecisionInvalid
 	}
 	return &PromptDecision{Kind: kind, ErrorCode: code, AllowNextStage: false}
+}
+
+// CheckSelectedAccount evaluates only a deferred account-scoped risk gate. It
+// must not enqueue or repeat the existing moderation/prompt-audit engines.
+func (c *Coordinator) CheckSelectedAccount(ctx context.Context, req Request) (decision *Decision) {
+	if c == nil {
+		return nil
+	}
+	gate, ok := c.preGate.(interface {
+		DecideSelected(context.Context, Request) *Decision
+	})
+	if !ok {
+		return nil
+	}
+	defer func() {
+		if recover() != nil {
+			decision = nil
+		}
+	}()
+	return gate.DecideSelected(ctx, req)
 }
