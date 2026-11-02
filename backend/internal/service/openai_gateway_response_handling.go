@@ -486,6 +486,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		// Extract data from SSE line (supports both "data: " and "data:" formats)
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
+			billingDataBytes := append([]byte(nil), dataBytes...)
 			eventType := effectiveOpenAISSEEventType(dataBytes, pendingSSEEventType)
 			if codexFailureTerminal && sawBareError && !sawResponseFailed &&
 				(eventType == "response.completed" || eventType == "response.done") {
@@ -673,6 +674,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				data = string(stampedData)
 				line = "data: " + data
 			}
+			if rewritten, changed := rewriteOpenAIChannelCacheTransferJSON(dataBytes, account, originalModel); changed {
+				dataBytes = rewritten
+				data = string(rewritten)
+				line = "data: " + data
+			}
 			// Replace model in response if needed.
 			if needModelReplace {
 				line = s.replaceModelInSSELine(line, mappedModel, originalModel)
@@ -730,7 +736,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				firstTokenMs = &ms
 				stopFirstOutputTimer()
 			}
-			s.parseSSEUsageBytesWithType(dataBytes, eventType, usage)
+			s.parseSSEUsageBytesWithType(billingDataBytes, eventType, usage)
 			return
 		}
 
@@ -1657,6 +1663,11 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	usage := &usageValue
 	logOpenAISuccessMissingUsage(ctx, c, account, resp, usage, "json", false)
 
+	// 仅重写客户端 usage；内部 usage 保留上游原值，计费阶段再转换一次。
+	if rewritten, changed := rewriteOpenAIChannelCacheTransferJSON(body, account, originalModel); changed {
+		body = rewritten
+	}
+
 	// Replace model in response if needed
 	if originalModel != mappedModel {
 		body = s.replaceModelInResponseBody(body, mappedModel, originalModel)
@@ -1784,6 +1795,9 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			bodyText = s.replaceModelInSSEBody(bodyText, mappedModel, originalModel)
 		}
 		body = []byte(bodyText)
+	}
+	if rewritten, changed := rewriteOpenAIChannelCacheTransferJSON(body, account, originalModel); changed {
+		body = rewritten
 	}
 
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)

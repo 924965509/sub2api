@@ -986,6 +986,36 @@ describe('EditAccountModal', () => {
     })
   })
 
+  it('loads and submits channel cache transfer settings while preserving other extra fields', async () => {
+    const account = buildAccount()
+    account.extra = {
+      openai_compact_mode: 'force_on',
+      channel_cache_transfer_ratio: 10,
+      channel_cache_transfer_target: 'input',
+      channel_cache_transfer_models: ['gpt-5.*']
+    }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+
+    const wrapper = mountModal(account)
+    expect((wrapper.get('[data-testid="channel-cache-transfer-ratio"]').element as HTMLInputElement).value).toBe('10')
+    expect((wrapper.get('[data-testid="channel-cache-transfer-target"]').element as HTMLSelectElement).value).toBe('input')
+    expect((wrapper.get('[data-testid="channel-cache-transfer-models"]').element as HTMLInputElement).value).toBe('gpt-5.*')
+
+    await wrapper.get('[data-testid="channel-cache-transfer-ratio"]').setValue('25')
+    await wrapper.get('[data-testid="channel-cache-transfer-target"]').setValue('cache_creation')
+    await wrapper.get('[data-testid="channel-cache-transfer-models"]').setValue('claude-opus-*, gpt-5.6-terra')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).toMatchObject({
+      openai_compact_mode: 'force_on',
+      channel_cache_transfer_ratio: 25,
+      channel_cache_transfer_target: 'cache_creation',
+      channel_cache_transfer_models: ['claude-opus-*', 'gpt-5.6-terra']
+    })
+  })
+
   it('removes the upstream request id header from extra when cleared', async () => {
     const account = buildAccount()
     account.extra = { upstream_request_id_header: 'X-Request-ID' }

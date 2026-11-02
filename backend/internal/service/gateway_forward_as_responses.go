@@ -199,7 +199,7 @@ func (s *GatewayService) ForwardAsResponses(
 	var handleErr error
 	if clientStream {
 		writerSizeBeforeStream := c.Writer.Size()
-		result, handleErr = s.handleResponsesStreamingResponse(resp, c, originalModel, mappedModel, reasoningEffort, startTime, clientToolMapping)
+		result, handleErr = s.handleResponsesStreamingResponse(resp, c, originalModel, mappedModel, reasoningEffort, startTime, clientToolMapping, account)
 		var sseErr *sseStreamErrorEventError
 		switch {
 		case errors.As(handleErr, &sseErr):
@@ -208,7 +208,7 @@ func (s *GatewayService) ForwardAsResponses(
 			s.rateLimitService.HandleStreamTimeout(ctx, account, originalModel)
 		}
 	} else {
-		result, handleErr = s.handleResponsesBufferedStreamingResponse(resp, c, originalModel, mappedModel, reasoningEffort, startTime, clientToolMapping)
+		result, handleErr = s.handleResponsesBufferedStreamingResponse(resp, c, originalModel, mappedModel, reasoningEffort, startTime, clientToolMapping, account)
 	}
 
 	return result, handleErr
@@ -383,8 +383,13 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	reasoningEffort *string,
 	startTime time.Time,
 	clientToolMapping apicompat.ResponsesClientToolMapping,
+	accounts ...*Account,
 ) (*ForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
+	var cacheAccount *Account
+	if len(accounts) > 0 {
+		cacheAccount = accounts[0]
+	}
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -475,13 +480,16 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 		return nil, fmt.Errorf("upstream stream ended without response")
 	}
 
-	// Update usage from accumulated delta
+	// Update outward usage from accumulated delta while preserving raw usage
+	// in ForwardResult for the billing-stage transfer.
 	if usage.InputTokens > 0 || usage.OutputTokens > 0 {
+		clientUsage := usage
+		applyChannelCacheTransferClaudeUsage(cacheAccount, originalModel, &clientUsage)
 		finalResp.Usage = apicompat.AnthropicUsage{
-			InputTokens:              usage.InputTokens,
-			OutputTokens:             usage.OutputTokens,
-			CacheCreationInputTokens: usage.CacheCreationInputTokens,
-			CacheReadInputTokens:     usage.CacheReadInputTokens,
+			InputTokens:              clientUsage.InputTokens,
+			OutputTokens:             clientUsage.OutputTokens,
+			CacheCreationInputTokens: clientUsage.CacheCreationInputTokens,
+			CacheReadInputTokens:     clientUsage.CacheReadInputTokens,
 		}
 	}
 
@@ -534,8 +542,13 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 	reasoningEffort *string,
 	startTime time.Time,
 	clientToolMapping apicompat.ResponsesClientToolMapping,
+	accounts ...*Account,
 ) (*ForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
+	var cacheAccount *Account
+	if len(accounts) > 0 {
+		cacheAccount = accounts[0]
+	}
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -593,11 +606,12 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 			return
 		}
 
-		// Keep the terminal Responses usage aligned with the normalized billing
-		// buckets. Normalize the converter input too, so message handlers cannot
-		// restore the provider's overlapping raw input total.
-		syncAnthropicResponsesUsage(state, usage)
-		normalizeAnthropicEventUsageForResponses(event, usage)
+		// Keep outward Responses usage aligned with the channel cache policy while
+		// preserving raw usage for ForwardResult billing.
+		clientUsage := usage
+		applyChannelCacheTransferClaudeUsage(cacheAccount, originalModel, &clientUsage)
+		syncAnthropicResponsesUsage(state, clientUsage)
+		normalizeAnthropicEventUsageForResponses(event, clientUsage)
 
 		// Convert to Responses events
 		events := apicompat.AnthropicEventToResponsesEvents(event, state)

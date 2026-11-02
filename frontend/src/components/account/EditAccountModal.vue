@@ -1997,6 +1997,13 @@
           </div>
         </div>
       </div>
+
+      <ChannelCacheTransferConfig
+        v-model:ratio="channelCacheTransferRatio"
+        v-model:target="channelCacheTransferTarget"
+        v-model:models="channelCacheTransferModels"
+      />
+
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <label class="input-label">{{ t('admin.accounts.expiresAt') }}</label>
         <input v-model="expiresAtInput" type="datetime-local" class="input" />
@@ -3407,6 +3414,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
+import ChannelCacheTransferConfig from '@/components/account/ChannelCacheTransferConfig.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
@@ -4083,6 +4091,11 @@ const autoResetCredit7dThreshold = ref(100)
 const upstreamBillingAutoProbeEnabled = ref(false)
 const upstreamBillingRateSyncEnabled = ref(false)
 const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
+type ChannelCacheTransferTarget = 'input' | 'cache_creation'
+const channelCacheTransferRatio = ref(0)
+const channelCacheTransferTarget = ref<ChannelCacheTransferTarget>('input')
+const channelCacheTransferModels = ref('')
+
 // 上游ID：直接上游声明请求标识的响应头名，留空不记录。
 const upstreamRequestIdHeader = ref('')
 const readUpstreamRequestIdHeader = (extra: unknown): string => {
@@ -4629,6 +4642,18 @@ const syncFormFromAccount = (newAccount: Account | null) => {
 	mixedScheduling.value = extra?.mixed_scheduling === true
 	allowOverages.value = extra?.allow_overages === true
 	upstreamRequestIdHeader.value = readUpstreamRequestIdHeader(extra)
+  const cacheRatio = Number(extra?.channel_cache_transfer_ratio ?? 0)
+  channelCacheTransferRatio.value = Number.isFinite(cacheRatio)
+    ? Math.min(100, Math.max(0, cacheRatio))
+    : 0
+  channelCacheTransferTarget.value =
+    extra?.channel_cache_transfer_target === 'cache_creation' ? 'cache_creation' : 'input'
+  const cacheModels = extra?.channel_cache_transfer_models
+  channelCacheTransferModels.value = Array.isArray(cacheModels)
+    ? cacheModels.filter((item): item is string => typeof item === 'string').join(',')
+    : typeof cacheModels === 'string'
+      ? cacheModels
+      : ''
 	openAIImagesUrlToB64JsonEnabled.value = extra?.images_url_to_b64_json === true
 	autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
 	autoPause7dThreshold.value = typeof extra?.auto_pause_7d_threshold === 'number' ? extra.auto_pause_7d_threshold * 100 : null
@@ -6374,6 +6399,34 @@ const handleSubmit = async () => {
       }
       // Quota notify config
       writeQuotaNotifyToExtra(newExtra, 'update')
+      updatePayload.extra = newExtra
+    }
+
+    // 渠道缓存是通用账号配置，最后统一合并，避免平台专属 extra 分支互相覆盖。
+    {
+      const currentExtra =
+        (updatePayload.extra as Record<string, unknown>) ||
+        (props.account.extra as Record<string, unknown>) ||
+        {}
+      const newExtra: Record<string, unknown> = { ...currentExtra }
+      const ratio = Math.min(100, Math.max(0, Number(channelCacheTransferRatio.value) || 0))
+      if (ratio > 0) {
+        newExtra.channel_cache_transfer_ratio = ratio
+        newExtra.channel_cache_transfer_target = channelCacheTransferTarget.value
+        const models = channelCacheTransferModels.value
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean)
+        if (models.length > 0) {
+          newExtra.channel_cache_transfer_models = models
+        } else {
+          delete newExtra.channel_cache_transfer_models
+        }
+      } else {
+        delete newExtra.channel_cache_transfer_ratio
+        delete newExtra.channel_cache_transfer_target
+        delete newExtra.channel_cache_transfer_models
+      }
       updatePayload.extra = newExtra
     }
 

@@ -317,6 +317,26 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock.mock.calls[0]?.[0]?.extra?.upstream_request_id_header).toBe('X-Oneapi-Request-Id')
   })
 
+  it('submits channel cache transfer settings in account extra', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('openai cache account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    await wrapper.get('[data-testid="channel-cache-transfer-ratio"]').setValue('25')
+    await wrapper.get('[data-testid="channel-cache-transfer-target"]').setValue('cache_creation')
+    await wrapper.get('[data-testid="channel-cache-transfer-models"]').setValue('claude-opus-*, gpt-5.6-terra')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.extra).toMatchObject({
+      channel_cache_transfer_ratio: 25,
+      channel_cache_transfer_target: 'cache_creation',
+      channel_cache_transfer_models: ['claude-opus-*', 'gpt-5.6-terra']
+    })
+  })
+
   it('omits images_url_to_b64_json from extra by default', async () => {
     await submitApiKeyAccount('openai')
 

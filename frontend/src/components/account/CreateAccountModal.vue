@@ -3268,6 +3268,13 @@
           <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierHint') }}</p>
         </div>
       </div>
+
+      <ChannelCacheTransferConfig
+        v-model:ratio="channelCacheTransferRatio"
+        v-model:target="channelCacheTransferTarget"
+        v-model:models="channelCacheTransferModels"
+      />
+
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <label class="input-label">{{ t('admin.accounts.expiresAt') }}</label>
         <input v-model="expiresAtInput" type="datetime-local" class="input" />
@@ -4154,6 +4161,7 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import UpstreamRequestIdHeaderField from '@/components/account/UpstreamRequestIdHeaderField.vue'
+import ChannelCacheTransferConfig from '@/components/account/ChannelCacheTransferConfig.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
@@ -4245,12 +4253,43 @@ const oauthStepTitle = computed(() => {
 })
 
 // Platform-specific hints for API Key type
+type ChannelCacheTransferTarget = 'input' | 'cache_creation'
+const channelCacheTransferRatio = ref(0)
+const channelCacheTransferTarget = ref<ChannelCacheTransferTarget>('input')
+const channelCacheTransferModels = ref('')
+
 // 上游ID：直接上游声明请求标识的响应头名，留空不记录。
+// 同一层统一合并渠道缓存配置，确保所有创建分支（含 OAuth 批量导入）都生效。
 const upstreamRequestIdHeader = ref('')
-const withUpstreamRequestIdHeader = <T extends Record<string, unknown> | undefined>(extra: T): T | Record<string, unknown> => {
+const withUpstreamRequestIdHeader = (
+  extra?: Record<string, unknown>
+): Record<string, unknown> | undefined => {
+  const next: Record<string, unknown> = { ...(extra || {}) }
   const name = upstreamRequestIdHeader.value.trim()
-  if (!name) return extra
-  return { ...(extra || {}), upstream_request_id_header: name }
+  if (name) {
+    next.upstream_request_id_header = name
+  }
+
+  const ratio = Math.min(100, Math.max(0, Number(channelCacheTransferRatio.value) || 0))
+  if (ratio > 0) {
+    next.channel_cache_transfer_ratio = ratio
+    next.channel_cache_transfer_target = channelCacheTransferTarget.value
+    const models = channelCacheTransferModels.value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+    if (models.length > 0) {
+      next.channel_cache_transfer_models = models
+    } else {
+      delete next.channel_cache_transfer_models
+    }
+  } else {
+    delete next.channel_cache_transfer_ratio
+    delete next.channel_cache_transfer_target
+    delete next.channel_cache_transfer_models
+  }
+
+  return Object.keys(next).length > 0 ? next : undefined
 }
 
 const baseUrlHint = computed(() => {
@@ -5632,6 +5671,9 @@ const resetForm = () => {
   apiKeyBaseUrl.value = 'https://api.anthropic.com'
   apiKeyValue.value = ''
   upstreamRequestIdHeader.value = ''
+  channelCacheTransferRatio.value = 0
+  channelCacheTransferTarget.value = 'input'
+  channelCacheTransferModels.value = ''
   upstreamBillingAutoProbeEnabled.value = true
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null

@@ -978,6 +978,24 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 			}
 		}
 
+		// 内部 usage patch 在渠道缓存转换前提取；客户端事件随后按配置重写，
+		// 最终计费由 RecordUsage 对原始 patch 转换一次。
+		usagePatch := s.extractSSEUsagePatch(event)
+		var clientUsage map[string]any
+		if eventType == "message_start" {
+			if msg, ok := event["message"].(map[string]any); ok {
+				clientUsage, _ = msg["usage"].(map[string]any)
+			}
+		} else if eventType == "message_delta" {
+			clientUsage, _ = event["usage"].(map[string]any)
+		}
+		if rewriteAnthropicUsageMapForChannelCache(clientUsage, account, originalModel) {
+			eventChanged = true
+			if overrideTarget, ok := s.resolveCacheTTLUsageOverrideTarget(ctx, account); ok {
+				eventChanged = rewriteCacheCreationJSON(clientUsage, overrideTarget) || eventChanged
+			}
+		}
+
 		if needModelReplace {
 			if msg, ok := event["message"].(map[string]any); ok {
 				if model, ok := msg["model"].(string); ok && model == mappedModel {
@@ -986,8 +1004,6 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 				}
 			}
 		}
-
-		usagePatch := s.extractSSEUsagePatch(event)
 		if anthropicStreamEventIsTerminal(eventName, dataLine) {
 			sawTerminalEvent = true
 		}
@@ -1450,6 +1466,12 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 				body = newBody
 			}
 		}
+	}
+
+	// 渠道缓存转换只重写客户端看到的 usage；内部 response.Usage 保留原始桶，
+	// 由 RecordUsage 在计费阶段转换一次，避免重复转出。
+	if rewritten, changed := rewriteAnthropicChannelCacheTransferJSON(body, account, originalModel); changed {
+		body = rewritten
 	}
 
 	// 如果有模型映射，替换响应中的model字段

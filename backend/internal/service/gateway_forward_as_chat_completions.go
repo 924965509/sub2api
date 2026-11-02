@@ -188,7 +188,7 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	var handleErr error
 	if clientStream {
 		writerSizeBeforeStream := c.Writer.Size()
-		result, handleErr = s.handleCCStreamingFromAnthropic(resp, c, originalModel, mappedModel, reasoningEffort, startTime)
+		result, handleErr = s.handleCCStreamingFromAnthropic(resp, c, originalModel, mappedModel, reasoningEffort, startTime, account)
 		var sseErr *sseStreamErrorEventError
 		switch {
 		case errors.As(handleErr, &sseErr):
@@ -197,7 +197,7 @@ func (s *GatewayService) ForwardAsChatCompletions(
 			s.rateLimitService.HandleStreamTimeout(ctx, account, originalModel)
 		}
 	} else {
-		result, handleErr = s.handleCCBufferedFromAnthropic(resp, c, originalModel, mappedModel, reasoningEffort, startTime)
+		result, handleErr = s.handleCCBufferedFromAnthropic(resp, c, originalModel, mappedModel, reasoningEffort, startTime, account)
 	}
 
 	return result, handleErr
@@ -234,8 +234,13 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 	mappedModel string,
 	reasoningEffort *string,
 	startTime time.Time,
+	accounts ...*Account,
 ) (*ForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
+	var cacheAccount *Account
+	if len(accounts) > 0 {
+		cacheAccount = accounts[0]
+	}
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -315,13 +320,16 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 		return nil, fmt.Errorf("upstream stream ended without response")
 	}
 
-	// Update usage from accumulated delta
+	// Update outward usage from accumulated delta. Billing keeps the raw usage
+	// in ForwardResult and applies the channel cache transfer exactly once later.
 	if usage.InputTokens > 0 || usage.OutputTokens > 0 {
+		clientUsage := usage
+		applyChannelCacheTransferClaudeUsage(cacheAccount, originalModel, &clientUsage)
 		finalResp.Usage = apicompat.AnthropicUsage{
-			InputTokens:              usage.InputTokens,
-			OutputTokens:             usage.OutputTokens,
-			CacheCreationInputTokens: usage.CacheCreationInputTokens,
-			CacheReadInputTokens:     usage.CacheReadInputTokens,
+			InputTokens:              clientUsage.InputTokens,
+			OutputTokens:             clientUsage.OutputTokens,
+			CacheCreationInputTokens: clientUsage.CacheCreationInputTokens,
+			CacheReadInputTokens:     clientUsage.CacheReadInputTokens,
 		}
 	}
 
@@ -368,8 +376,13 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 	mappedModel string,
 	reasoningEffort *string,
 	startTime time.Time,
+	accounts ...*Account,
 ) (*ForwardResult, error) {
 	requestID := resp.Header.Get("x-request-id")
+	var cacheAccount *Account
+	if len(accounts) > 0 {
+		cacheAccount = accounts[0]
+	}
 
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -456,10 +469,12 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 			return
 		}
 
-		// Keep the outward Responses/Chat usage on the same normalized buckets used
-		// for billing, including converter handlers that consume event usage.
-		syncAnthropicResponsesUsage(anthState, usage)
-		normalizeAnthropicEventUsageForResponses(event, usage)
+		// Keep outward usage aligned with the channel cache policy while preserving
+		// raw usage for ForwardResult billing.
+		clientUsage := usage
+		applyChannelCacheTransferClaudeUsage(cacheAccount, originalModel, &clientUsage)
+		syncAnthropicResponsesUsage(anthState, clientUsage)
+		normalizeAnthropicEventUsageForResponses(event, clientUsage)
 
 		// Chain: Anthropic event → Responses events → CC chunks
 		responsesEvents := apicompat.AnthropicEventToResponsesEvents(event, anthState)
