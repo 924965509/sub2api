@@ -81,9 +81,16 @@ func (c *OpenAIClassifier) ScoreQuestions(ctx context.Context, endpoint Classifi
 		payload = map[string]any{"model": endpoint.Model, "temperature": 0, "max_tokens": 512, "messages": []map[string]string{{"role": "system", "content": instruction}, {"role": "user", "content": text}}}
 	} else {
 		requestURL, err = decisionURL(endpoint.BaseURL)
+		questionType := "boolean"
+		if provider == "jev" {
+			// TypeSafe System One uses the "noul" wire type for probabilistic
+			// yes/no decisions. "boolean" is not a valid question type and is
+			// rejected by api.typesafe.ai with HTTP 400.
+			questionType = "noul"
+		}
 		asked := map[string]any{}
 		for _, q := range questions {
-			asked[q.ID] = map[string]any{"type": "boolean", "instructions": q.Instructions}
+			asked[q.ID] = map[string]any{"type": questionType, "instructions": q.Instructions}
 		}
 		payload = map[string]any{"model": endpoint.Model, "state": text, "questions": asked}
 	}
