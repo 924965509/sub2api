@@ -60,13 +60,21 @@ export default {
     summaryAll: "All accounts",
     summaryConfigured: "Account scope configured",
     matchSummary: "Currently matches {matched} / {total} accounts",
-    platformPlans: "Platform · plan",
+    platformPlans: "Platform · plan / type",
     platformPlansHint:
-      "Counts reflect current accounts. An empty selection means all accounts.",
-    accounts: "Specific accounts",
+      "Counts reflect current accounts (including apikey channel accounts). An empty selection means all accounts.",
+    apiChannels: "Quick select API channels & accounts",
+    apiChannelsHint:
+      "Click to toggle an API channel base URL or individual account in the inspection scope.",
+    apiDomains: "Toggle by API channel base URL",
+    filterAll: "All accounts",
+    filterApiKey: "API accounts only",
+    filterOAuth: "OAuth accounts only",
+    searchAccountsPlaceholder: "Search account name, ID, or API URL…",
+    accounts: "Specific accounts / API channels",
     accountsHint:
-      "One account ID, email, or name per line. Combined with platform-plan selections.",
-    accountsPlaceholder: "Account ID, email, or name; one per line",
+      "One account ID, email, name, or API base URL per line. Combined with platform-plan selections.",
+    accountsPlaceholder: "Account ID, email, name, or API base URL; one per line",
     emptyWarning:
       "No accounts match the selected scope; no account will be inspected.",
     noAccounts: "No accounts are available.",

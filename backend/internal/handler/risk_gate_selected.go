@@ -36,19 +36,28 @@ func checkSelectedRiskGate(c *gin.Context, coordinator *securityaudit.Coordinato
 	if plan == "" {
 		plan = account.GetExtraString("plan_type")
 	}
+	if plan == "" && strings.EqualFold(strings.TrimSpace(account.Type), "apikey") {
+		plan = "apikey"
+	}
 	email := account.GetCredential("email")
 	if email == "" {
 		email = account.GetExtraString("email")
+	}
+	baseURL := account.GetCredential("base_url")
+	if baseURL == "" {
+		baseURL = account.GetExtraString("base_url")
 	}
 	observation.SelectedAccountID = account.ID
 	observation.SelectedAccountPlan = plan
 	observation.SelectedAccountName = account.Name
 	observation.SelectedAccountEmail = email
 	observation.SelectedAccountPlatform = account.Platform
+	observation.SelectedAccountType = account.Type
+	observation.SelectedAccountBaseURL = baseURL
 	// Retry attempts update the actual account; the original prompt and turn key
 	// remain unchanged, so telemetry does not count a retry as a new request.
 	c.Request = c.Request.WithContext(ctxkey.WithUpstreamObservation(c.Request.Context(), observation))
-	request := securityaudit.Request{RequestID: observation.RequestID, UserID: observation.UserID, APIKeyID: observation.APIKeyID, GroupID: observation.GroupID, Provider: observation.Provider, Endpoint: observation.Endpoint, Protocol: observation.Protocol, Model: observation.Model, Body: observation.Body, Stage: observation.Stage, AuditTurn: observation.AuditTurn, InboundDeviceID: observation.InboundDeviceID, ClientFingerprint: observation.ClientFingerprint, SelectedAccountID: account.ID, SelectedAccountPlan: plan, SelectedAccountPlatform: account.Platform, SelectedAccountEmail: email, SelectedAccountName: account.Name}
+	request := securityaudit.Request{RequestID: observation.RequestID, UserID: observation.UserID, APIKeyID: observation.APIKeyID, GroupID: observation.GroupID, Provider: observation.Provider, Endpoint: observation.Endpoint, Protocol: observation.Protocol, Model: observation.Model, Body: observation.Body, Stage: observation.Stage, AuditTurn: observation.AuditTurn, InboundDeviceID: observation.InboundDeviceID, ClientFingerprint: observation.ClientFingerprint, SelectedAccountID: account.ID, SelectedAccountPlan: plan, SelectedAccountPlatform: account.Platform, SelectedAccountEmail: email, SelectedAccountName: account.Name, SelectedAccountType: account.Type, SelectedAccountBaseURL: baseURL}
 	return coordinator.CheckSelectedAccount(c.Request.Context(), request)
 }
 func writeSelectedRiskGateError(c *gin.Context, decision *securityaudit.Decision) {

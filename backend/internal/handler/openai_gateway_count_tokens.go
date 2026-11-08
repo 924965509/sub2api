@@ -124,6 +124,10 @@ func (h *OpenAIGatewayHandler) ResponsesInputTokens(c *gin.Context) {
 	}
 
 	setOpsSelectedAccount(c, account.ID, account.Platform)
+	if decision := h.checkSelectedRiskGate(c, account); decision != nil && !decision.AllowNextStage {
+		writeSelectedRiskGateError(c, decision)
+		return
+	}
 	if err := h.gatewayService.ForwardResponsesInputTokens(c.Request.Context(), c, account, forwardBody); err != nil {
 		reqLog.Error("openai_input_tokens.forward_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 	}
@@ -298,6 +302,10 @@ func (h *OpenAIGatewayHandler) CountTokens(c *gin.Context) {
 	}
 
 	setOpsSelectedAccount(c, account.ID, account.Platform)
+	if decision := h.checkSelectedRiskGate(c, account); decision != nil && !decision.AllowNextStage {
+		writeSelectedRiskGateError(c, decision)
+		return
+	}
 	forwardBody := mappedBodyForMessages(channelMapping.Mapped, channelMapping.MappedModel)
 	defaultMappedModel := preferredMappedModel
 

@@ -97,6 +97,8 @@ type Request struct {
 	SelectedAccountName     string
 	SelectedAccountEmail    string
 	SelectedAccountPlatform string
+	SelectedAccountType     string
+	SelectedAccountBaseURL  string
 	AuditTurn               string
 	SelectedAccountPlan     string
 }

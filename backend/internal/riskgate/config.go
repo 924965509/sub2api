@@ -2,6 +2,7 @@ package riskgate
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -467,6 +468,24 @@ func (c Config) inScope(groupID *int64, provider string) bool {
 	return true
 }
 
+func matchScopeBaseURL(want, rawBaseURL string) bool {
+	want = strings.TrimRight(strings.ToLower(strings.TrimSpace(want)), "/")
+	base := strings.TrimRight(strings.ToLower(strings.TrimSpace(sanitizeScopeBaseURL(rawBaseURL))), "/")
+	if want == "" || base == "" {
+		return false
+	}
+	if want == base {
+		return true
+	}
+	if u, err := url.Parse(base); err == nil && u.Host != "" {
+		host := strings.ToLower(u.Host)
+		if want == host || want == u.Scheme+"://"+host {
+			return true
+		}
+	}
+	return false
+}
+
 func (c Config) inScopeRequest(req securityaudit.Request) bool {
 	if !c.inScope(req.GroupID, req.Provider) {
 		return false
@@ -479,7 +498,10 @@ func (c Config) inScopeRequest(req securityaudit.Request) bool {
 	}
 	for _, raw := range c.Scope.AccountIDs {
 		want := strings.TrimSpace(raw)
-		if want == fmt.Sprint(req.SelectedAccountID) || strings.EqualFold(want, req.SelectedAccountName) || strings.EqualFold(want, req.SelectedAccountEmail) {
+		if want == fmt.Sprint(req.SelectedAccountID) ||
+			strings.EqualFold(want, req.SelectedAccountName) ||
+			strings.EqualFold(want, req.SelectedAccountEmail) ||
+			matchScopeBaseURL(want, req.SelectedAccountBaseURL) {
 			return true
 		}
 	}
@@ -487,9 +509,19 @@ func (c Config) inScopeRequest(req securityaudit.Request) bool {
 	if platform == "" {
 		platform = req.Provider
 	}
-	selected := canonicalPlatform(platform) + ":" + canonicalPlan(req.SelectedAccountPlan)
+	canonPlat := canonicalPlatform(platform)
+	canonPlan := canonicalPlan(req.SelectedAccountPlan)
+	if canonPlan == "unknown" && strings.EqualFold(strings.TrimSpace(req.SelectedAccountType), "apikey") {
+		canonPlan = "apikey"
+	}
+	selected := canonPlat + ":" + canonPlan
+	isAPIKeyAccount := canonPlan == "apikey" || strings.EqualFold(strings.TrimSpace(req.SelectedAccountType), "apikey")
 	for _, raw := range c.Scope.AccountPlatformPlans {
-		if strings.EqualFold(strings.TrimSpace(raw), selected) {
+		candidate := strings.TrimSpace(raw)
+		if strings.EqualFold(candidate, selected) {
+			return true
+		}
+		if isAPIKeyAccount && (strings.EqualFold(candidate, canonPlat+":apikey") || strings.EqualFold(candidate, canonPlat+":unknown")) {
 			return true
 		}
 	}

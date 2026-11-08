@@ -152,6 +152,30 @@ func TestAlignmentAccountScopeDefersAndUsesRealSelectedIdentity(t *testing.T) {
 	req.SelectedAccountPlan = "pro"
 	req.SelectedAccountEmail = "FIXTURE@example.test"
 	require.NotNil(t, engine.DecideSelected(context.Background(), req), "specified identity and plan selectors form a case-insensitive union")
+
+	// API key channel account matching by platform:apikey or base_url/host
+	source.config.Scope.AccountPlatformPlans = []string{"gpt:apikey"}
+	source.config.Scope.AccountIDs = []string{"api.jimu88.com"}
+	apiReq := securityaudit.Request{
+		RequestID:               "scope-apikey",
+		APIKeyID:                1,
+		UserID:                  2,
+		Provider:                "openai",
+		Protocol:                "openai_responses",
+		Model:                   "gpt-5.6-sol",
+		Stage:                   "http",
+		Body:                    []byte(`{"model":"gpt-5.6-sol","input":[{"role":"user","content":"fixture_trigger"}]}`),
+		SelectedAccountID:       2165,
+		SelectedAccountName:     "https://api.jimu88.com/ plus",
+		SelectedAccountPlatform: "openai",
+		SelectedAccountType:     "apikey",
+		SelectedAccountPlan:     "apikey",
+		SelectedAccountBaseURL:  "https://api.jimu88.com",
+	}
+	require.NotNil(t, engine.DecideSelected(context.Background(), apiReq), "apikey platform plan matches selected API account")
+	source.config.Scope.AccountPlatformPlans = nil
+	require.NotNil(t, engine.DecideSelected(context.Background(), apiReq), "API channel base_url host matches selected API account")
+
 	source.config.Scope.AccountPlatformPlans = nil
 	source.config.Scope.AccountIDs = nil
 	calls := rules.Calls()

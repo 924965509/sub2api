@@ -2256,6 +2256,11 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 		return
 	}
 	setOpsSelectedAccount(c, account.ID, account.Platform)
+	if decision := h.checkSelectedRiskGate(c, account); decision != nil && !decision.AllowNextStage {
+		h.gatewayService.ReleaseAccountSession(context.Background(), account, sessionHash)
+		writeSelectedRiskGateError(c, decision)
+		return
+	}
 
 	// 转发请求（不记录使用量）
 	if err := h.gatewayService.ForwardCountTokens(c.Request.Context(), c, account, parsedReq); err != nil {

@@ -21,6 +21,8 @@ type UpstreamObservation struct {
 	SelectedAccountName     string
 	SelectedAccountEmail    string
 	SelectedAccountPlatform string
+	SelectedAccountType     string
+	SelectedAccountBaseURL  string
 	AuditTurn               string
 	Stage                   string
 	SelectedAccountPlan     string

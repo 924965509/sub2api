@@ -227,6 +227,8 @@ export interface ScopeAccount {
   name: string;
   email?: string;
   platform: string;
+  account_type?: string;
+  base_url?: string;
   plan_type: string;
   scope_key: string;
   schedulable: boolean;

@@ -540,24 +540,55 @@ export function scopeConfigured(
   );
 }
 
+export function extractBaseURLHost(raw?: string | null): string {
+  const trimmed = (raw ?? "").trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.host.toLowerCase();
+  } catch {
+    return trimmed.toLowerCase();
+  }
+}
+
 export function accountInScope(
   scope: Pick<ScopeConfig, "account_platform_plans" | "account_ids">,
   account: ScopeAccount,
 ): boolean {
   if (!scopeConfigured(scope)) return true;
   const wanted = (scope.account_ids ?? [])
-    .map((value) => value.trim().toLowerCase())
+    .map((value) => value.trim().toLowerCase().replace(/\/+$/, ""))
     .filter(Boolean);
-  const identity = [account.id, account.email, account.name]
+  const baseTrimmed = (account.base_url ?? "").trim().toLowerCase().replace(/\/+$/, "");
+  const baseHost = extractBaseURLHost(account.base_url);
+  const identity = [
+    account.id,
+    account.email,
+    account.name,
+    baseTrimmed,
+    baseHost,
+  ]
     .filter(Boolean)
     .map((value) => String(value).trim().toLowerCase());
-  return (
-    wanted.some((value) => identity.includes(value)) ||
+  const selectedPlans = (scope.account_platform_plans ?? []).map((value) =>
+    value.trim().toLowerCase(),
+  );
+  const isApiKey =
+    account.account_type?.toLowerCase() === "apikey" ||
+    account.plan_type?.toLowerCase() === "apikey";
+  const platform = (account.platform ?? "").trim().toLowerCase();
+  const planMatch =
     Boolean(
       account.scope_key &&
-      (scope.account_platform_plans ?? []).includes(account.scope_key),
-    )
-  );
+        selectedPlans.includes(account.scope_key.toLowerCase()),
+    ) ||
+    (isApiKey &&
+      Boolean(
+        platform &&
+          (selectedPlans.includes(`${platform}:apikey`) ||
+            selectedPlans.includes(`${platform}:unknown`)),
+      ));
+  return wanted.some((value) => identity.includes(value)) || planMatch;
 }
 
 export function scopeMatches(

@@ -395,3 +395,43 @@ describe("event outcome compatibility", () => {
     expect(eventOutcome({ kind: "blocked", action: "banned", reason: "rule" })).toBe("blocked");
   });
 });
+
+describe("API account and channel scope matching", () => {
+  it("matches API accounts by platform:apikey, account ID, name, or base_url host", async () => {
+    const { accountInScope } = await import("../viewModel");
+    const jimuAccount = {
+      id: "2165",
+      name: "https://api.jimu88.com/ plus",
+      platform: "gpt",
+      account_type: "apikey",
+      base_url: "https://api.jimu88.com",
+      plan_type: "apikey",
+      scope_key: "gpt:apikey",
+      schedulable: true,
+    };
+    expect(
+      accountInScope(
+        { account_platform_plans: ["gpt:apikey"], account_ids: [] },
+        jimuAccount,
+      ),
+    ).toBe(true);
+    expect(
+      accountInScope(
+        { account_platform_plans: [], account_ids: ["api.jimu88.com"] },
+        jimuAccount,
+      ),
+    ).toBe(true);
+    expect(
+      accountInScope(
+        { account_platform_plans: [], account_ids: ["2165"] },
+        jimuAccount,
+      ),
+    ).toBe(true);
+    expect(
+      accountInScope(
+        { account_platform_plans: ["claude:max"], account_ids: [] },
+        jimuAccount,
+      ),
+    ).toBe(false);
+  });
+});

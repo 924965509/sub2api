@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 )
@@ -68,6 +69,8 @@ type ScopeAccount struct {
 	Name        string `json:"name"`
 	Email       string `json:"email"`
 	Platform    string `json:"platform"`
+	AccountType string `json:"account_type,omitempty"`
+	BaseURL     string `json:"base_url,omitempty"`
 	PlanType    string `json:"plan_type"`
 	ScopeKey    string `json:"scope_key"`
 	Schedulable bool   `json:"schedulable"`
@@ -103,11 +106,27 @@ func canonicalPlan(plan string) string {
 		return "pro"
 	case "max_5x", "max_20x", "claude_max":
 		return "max"
+	case "api", "api_key", "apikey":
+		return "apikey"
 	case "":
 		return "unknown"
 	default:
 		return plan
 	}
+}
+func sanitizeScopeBaseURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return strings.TrimRight(raw, "/")
+	}
+	u.User = nil
+	u.RawQuery = ""
+	u.Fragment = ""
+	return strings.TrimRight(u.String(), "/")
 }
 func (s *AdminService) ScopeInventory(ctx context.Context) (ScopeInventory, error) {
 	result := ScopeInventory{Accounts: []ScopeAccount{}, Options: []ScopeOption{}}
@@ -116,7 +135,7 @@ func (s *AdminService) ScopeInventory(ctx context.Context) (ScopeInventory, erro
 	}
 	// Select only the harmless metadata needed by the selector. Credentials JSON is
 	// never returned from SQL, serialized into an API response, or written to logs.
-	rows, err := s.config.db.QueryContext(ctx, `SELECT id,name,platform,COALESCE(credentials->>'email',extra->>'email',''),COALESCE(NULLIF(credentials->>'plan_type',''),NULLIF(extra->>'subscription_tier',''),NULLIF(extra->>'plan_type',''),'unknown'),schedulable AND status='active' FROM accounts WHERE deleted_at IS NULL ORDER BY id LIMIT 10001`)
+	rows, err := s.config.db.QueryContext(ctx, `SELECT id,name,platform,COALESCE(type,''),COALESCE(credentials->>'email',extra->>'email',''),COALESCE(NULLIF(credentials->>'plan_type',''),NULLIF(extra->>'subscription_tier',''),NULLIF(extra->>'plan_type',''),'unknown'),COALESCE(credentials->>'base_url',extra->>'base_url',''),schedulable AND status='active' FROM accounts WHERE deleted_at IS NULL ORDER BY id LIMIT 10001`)
 	if err != nil {
 		return result, err
 	}
@@ -125,7 +144,7 @@ func (s *AdminService) ScopeInventory(ctx context.Context) (ScopeInventory, erro
 	for rows.Next() {
 		var r ScopeAccount
 		var id int64
-		if err = rows.Scan(&id, &r.Name, &r.Platform, &r.Email, &r.PlanType, &r.Schedulable); err != nil {
+		if err = rows.Scan(&id, &r.Name, &r.Platform, &r.AccountType, &r.Email, &r.PlanType, &r.BaseURL, &r.Schedulable); err != nil {
 			return result, err
 		}
 		if len(result.Accounts) >= 10000 {
@@ -133,8 +152,13 @@ func (s *AdminService) ScopeInventory(ctx context.Context) (ScopeInventory, erro
 			break
 		}
 		r.ID = fmt.Sprint(id)
+		r.AccountType = strings.ToLower(strings.TrimSpace(r.AccountType))
+		r.BaseURL = sanitizeScopeBaseURL(r.BaseURL)
 		r.Platform = canonicalPlatform(r.Platform)
 		r.PlanType = canonicalPlan(r.PlanType)
+		if r.PlanType == "unknown" && r.AccountType == "apikey" {
+			r.PlanType = "apikey"
+		}
 		r.ScopeKey = r.Platform + ":" + r.PlanType
 		result.Accounts = append(result.Accounts, r)
 		counts[r.ScopeKey]++
