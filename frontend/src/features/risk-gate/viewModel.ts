@@ -275,6 +275,7 @@ export function configToDraft(config: RiskGateConfig): RiskGateConfig {
       openai_platform_enabled: cloned.scope?.openai_platform_enabled ?? true,
       account_platform_plans: cloned.scope?.account_platform_plans ?? [],
       account_ids: cloned.scope?.account_ids ?? [],
+      exempt_api_keys: cloned.scope?.exempt_api_keys ?? [],
     },
   };
 }
@@ -383,6 +384,7 @@ export function buildUpdateRequest(
       openai_platform_enabled: cloned.scope.openai_platform_enabled ?? true,
       account_platform_plans: [...(cloned.scope.account_platform_plans ?? [])],
       account_ids: [...(cloned.scope.account_ids ?? [])],
+      exempt_api_keys: [...(cloned.scope.exempt_api_keys ?? [])],
     },
     schema_version: cloned.schema_version ?? 0,
     retention_days: Number(cloned.retention_days),

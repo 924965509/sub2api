@@ -263,6 +263,7 @@ func (c Config) WithDefaults() Config {
 	c.Scope.Providers = append([]string(nil), c.Scope.Providers...)
 	c.Scope.AccountPlatformPlans = append([]string(nil), c.Scope.AccountPlatformPlans...)
 	c.Scope.AccountIDs = append([]string(nil), c.Scope.AccountIDs...)
+	c.Scope.ExemptAPIKeys = append([]string(nil), c.Scope.ExemptAPIKeys...)
 	return c
 }
 
@@ -280,6 +281,7 @@ func (c Config) Clone() Config {
 	c.Scope.Providers = append([]string(nil), c.Scope.Providers...)
 	c.Scope.AccountPlatformPlans = append([]string(nil), c.Scope.AccountPlatformPlans...)
 	c.Scope.AccountIDs = append([]string(nil), c.Scope.AccountIDs...)
+	c.Scope.ExemptAPIKeys = append([]string(nil), c.Scope.ExemptAPIKeys...)
 	return c
 }
 
@@ -383,7 +385,7 @@ func Validate(cfg Config) error {
 	if len(cfg.Scope.GroupIDs) > maxListEntries || len(cfg.Scope.Providers) > maxListEntries {
 		return invalidConfig("scope 列表过长")
 	}
-	if len(cfg.Scope.AccountIDs) > maxListEntries || len(cfg.Scope.AccountPlatformPlans) > maxListEntries {
+	if len(cfg.Scope.AccountIDs) > maxListEntries || len(cfg.Scope.AccountPlatformPlans) > maxListEntries || len(cfg.Scope.ExemptAPIKeys) > maxListEntries {
 		return invalidConfig("scope account 列表过长")
 	}
 	if !cfg.Scope.AllGroups && len(cfg.Scope.GroupIDs) == 0 {
@@ -486,7 +488,41 @@ func matchScopeBaseURL(want, rawBaseURL string) bool {
 	return false
 }
 
+func (c Config) isExemptAPIKey(req securityaudit.Request) bool {
+	if len(c.Scope.ExemptAPIKeys) == 0 {
+		return false
+	}
+	idStr := ""
+	if req.APIKeyID > 0 {
+		idStr = fmt.Sprint(req.APIKeyID)
+	}
+	name := strings.TrimSpace(req.APIKeyName)
+	prefix := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(req.APIKeyPrefix), "..."))
+	for _, raw := range c.Scope.ExemptAPIKeys {
+		want := strings.TrimSpace(raw)
+		if want == "" {
+			continue
+		}
+		cleanID := strings.TrimSpace(strings.TrimPrefix(want, "#"))
+		if idStr != "" && cleanID == idStr {
+			return true
+		}
+		if name != "" && strings.EqualFold(want, name) {
+			return true
+		}
+		wantPrefix := strings.ToLower(strings.TrimSuffix(want, "..."))
+		if prefix != "" && len(wantPrefix) >= 6 && strings.HasPrefix(wantPrefix, "sk-") &&
+			(strings.HasPrefix(prefix, wantPrefix) || strings.HasPrefix(wantPrefix, prefix)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (c Config) inScopeRequest(req securityaudit.Request) bool {
+	if c.isExemptAPIKey(req) {
+		return false
+	}
 	if !c.inScope(req.GroupID, req.Provider) {
 		return false
 	}

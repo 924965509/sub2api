@@ -176,6 +176,18 @@ func TestAlignmentAccountScopeDefersAndUsesRealSelectedIdentity(t *testing.T) {
 	source.config.Scope.AccountPlatformPlans = nil
 	require.NotNil(t, engine.DecideSelected(context.Background(), apiReq), "API channel base_url host matches selected API account")
 
+	// Exempt API Key bypasses audit by ID, #ID, Name, or sk- prefix
+	apiReq.APIKeyID = 8
+	apiReq.APIKeyName = "codex"
+	apiReq.APIKeyPrefix = "sk-be048cc123456"
+	source.config.Scope.ExemptAPIKeys = []string{"#8"}
+	require.Nil(t, engine.DecideSelected(context.Background(), apiReq), "exempt API key by #ID must bypass risk gate")
+	source.config.Scope.ExemptAPIKeys = []string{"CODEX"}
+	require.Nil(t, engine.DecideSelected(context.Background(), apiReq), "exempt API key by name (case-insensitive) must bypass risk gate")
+	source.config.Scope.ExemptAPIKeys = []string{"sk-be048cc..."}
+	require.Nil(t, engine.DecideSelected(context.Background(), apiReq), "exempt API key by sk- prefix must bypass risk gate")
+	source.config.Scope.ExemptAPIKeys = nil
+
 	source.config.Scope.AccountPlatformPlans = nil
 	source.config.Scope.AccountIDs = nil
 	calls := rules.Calls()

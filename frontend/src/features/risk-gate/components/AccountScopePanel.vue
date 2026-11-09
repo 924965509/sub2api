@@ -191,10 +191,91 @@
           })
         }}</span
         ><span
+          v-if="scope.exempt_api_keys?.length"
+          class="font-medium text-emerald-700 dark:text-emerald-300"
+          >{{
+            t("admin.riskGate.scope.exemptCountBadge", {
+              count: scope.exempt_api_keys.length,
+            })
+          }}</span
+        ><span
           v-if="configured && matched === 0"
           class="font-medium text-amber-700 dark:text-amber-300"
           >{{ t("admin.riskGate.scope.emptyWarning") }}</span
         >
+      </section>
+
+      <section
+        class="space-y-3 rounded-lg border border-gray-200 p-3 dark:border-dark-700/60"
+      >
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <label class="text-sm font-medium" for="risk-scope-exempt-keys">{{
+              t("admin.riskGate.scope.exemptApiKeys")
+            }}</label>
+            <p class="text-xs text-gray-500 dark:text-dark-400">
+              {{ t("admin.riskGate.scope.exemptApiKeysHint") }}
+            </p>
+          </div>
+          <button
+            v-if="scope.exempt_api_keys?.length"
+            type="button"
+            class="btn btn-ghost btn-sm"
+            @click="patch({ exempt_api_keys: [] })"
+          >
+            {{ t("admin.riskGate.actions.clear") }}
+          </button>
+        </div>
+
+        <template v-if="allApiKeys.length">
+          <input
+            v-model="apiKeySearchQuery"
+            type="search"
+            data-test="scope-apikey-search"
+            class="input w-full text-xs"
+            :placeholder="t('admin.riskGate.scope.searchApiKeysPlaceholder')"
+          />
+
+          <div class="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto pr-1">
+            <button
+              v-for="apiKey in filteredApiKeys"
+              :key="apiKey.id"
+              type="button"
+              data-test="scope-apikey-chip"
+              class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-colors"
+              :class="
+                isApiKeyExemptSelected(apiKey)
+                  ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300'
+                  : 'border-gray-200 text-gray-600 hover:border-emerald-300 dark:border-dark-700 dark:text-dark-300'
+              "
+              :aria-pressed="isApiKeyExemptSelected(apiKey)"
+              @click="toggleExemptApiKey(apiKey)"
+            >
+              <span class="font-mono opacity-60">#{{ apiKey.id }}</span>
+              <span class="max-w-[180px] truncate font-medium">{{
+                apiKey.name || apiKey.id
+              }}</span>
+              <span
+                v-if="apiKey.group_name"
+                class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600 dark:bg-dark-800 dark:text-dark-300"
+                >{{ apiKey.group_name }}</span
+              >
+              <span
+                v-if="apiKey.key_prefix"
+                class="font-mono text-[10px] opacity-60"
+                >{{ apiKey.key_prefix }}</span
+              >
+            </button>
+          </div>
+        </template>
+
+        <textarea
+          id="risk-scope-exempt-keys"
+          class="input min-h-20 w-full font-mono text-xs"
+          :value="(scope.exempt_api_keys ?? []).join('\n')"
+          :placeholder="t('admin.riskGate.scope.exemptApiKeysPlaceholder')"
+          @input="onExemptKeysInput"
+        />
       </section>
       <section
         class="rounded-lg border border-gray-200 px-3 py-3 dark:border-dark-700/60"
@@ -246,7 +327,12 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import type { ScopeAccount, ScopeConfig, ScopeInventory } from "../types";
+import type {
+  ScopeAPIKey,
+  ScopeAccount,
+  ScopeConfig,
+  ScopeInventory,
+} from "../types";
 import {
   extractBaseURLHost,
   parseNumberList,
@@ -267,8 +353,22 @@ const open = ref(false);
 const advancedOpen = ref(false);
 const accountTypeFilter = ref<"all" | "apikey" | "oauth">("all");
 const searchQuery = ref("");
+const apiKeySearchQuery = ref("");
 
 const allAccounts = computed(() => props.inventory?.accounts ?? []);
+const allApiKeys = computed(() => props.inventory?.api_keys ?? []);
+
+const filteredApiKeys = computed(() => {
+  const q = apiKeySearchQuery.value.trim().toLowerCase();
+  if (!q) return allApiKeys.value;
+  return allApiKeys.value.filter((k) =>
+    [k.id, `#${k.id}`, k.name, k.key_prefix, k.group_name]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(q),
+  );
+});
 const isApiKeyAccount = (account: ScopeAccount) =>
   account.account_type?.toLowerCase() === "apikey" ||
   account.plan_type?.toLowerCase() === "apikey";
@@ -441,6 +541,80 @@ function togglePlan(id: string) {
 function onAccountsInput(event: Event) {
   patch({
     account_ids: (event.target as HTMLTextAreaElement).value
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  });
+}
+function isApiKeyExemptSelected(apiKey: ScopeAPIKey): boolean {
+  const prefixClean = (apiKey.key_prefix ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\.+$/, "");
+  const identities = new Set(
+    [
+      apiKey.id,
+      `#${apiKey.id}`,
+      apiKey.name,
+      apiKey.key_prefix,
+      prefixClean,
+    ]
+      .map((v) => normalizeToken(v))
+      .filter(Boolean),
+  );
+  return (props.scope.exempt_api_keys ?? []).some((item) => {
+    const norm = normalizeToken(item);
+    const normPrefix = norm.replace(/\.+$/, "");
+    return (
+      identities.has(norm) ||
+      (prefixClean.length >= 6 &&
+        normPrefix.length >= 6 &&
+        normPrefix.startsWith("sk-") &&
+        (prefixClean.startsWith(normPrefix) || normPrefix.startsWith(prefixClean)))
+    );
+  });
+}
+function toggleExemptApiKey(apiKey: ScopeAPIKey) {
+  const current = props.scope.exempt_api_keys ?? [];
+  const prefixClean = (apiKey.key_prefix ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\.+$/, "");
+  const identities = new Set(
+    [
+      apiKey.id,
+      `#${apiKey.id}`,
+      apiKey.name,
+      apiKey.key_prefix,
+      prefixClean,
+    ]
+      .map((v) => normalizeToken(v))
+      .filter(Boolean),
+  );
+  const matchesKey = (item: string) => {
+    const norm = normalizeToken(item);
+    const normPrefix = norm.replace(/\.+$/, "");
+    return (
+      identities.has(norm) ||
+      (prefixClean.length >= 6 &&
+        normPrefix.length >= 6 &&
+        normPrefix.startsWith("sk-") &&
+        (prefixClean.startsWith(normPrefix) || normPrefix.startsWith(prefixClean)))
+    );
+  };
+  if (current.some(matchesKey)) {
+    patch({
+      exempt_api_keys: current.filter((item) => !matchesKey(item)),
+    });
+  } else {
+    patch({
+      exempt_api_keys: [...current, apiKey.name || apiKey.id],
+    });
+  }
+}
+function onExemptKeysInput(event: Event) {
+  patch({
+    exempt_api_keys: (event.target as HTMLTextAreaElement).value
       .split("\n")
       .map((value) => value.trim())
       .filter(Boolean),

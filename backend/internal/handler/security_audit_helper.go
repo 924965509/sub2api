@@ -102,6 +102,7 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 	// Body 只读共享不复制；WebSocket 每轮都会覆盖成当轮正文。
 	c.Request = c.Request.WithContext(ctxkey.WithUpstreamObservation(c.Request.Context(), ctxkey.UpstreamObservation{
 		RequestID: request.RequestID, UserID: request.UserID, APIKeyID: request.APIKeyID,
+		APIKeyName: request.APIKeyName, APIKeyPrefix: request.APIKeyPrefix,
 		GroupID: request.GroupID, Provider: request.Provider, Endpoint: request.Endpoint,
 		Protocol: request.Protocol, Model: request.Model, Body: request.Body, Stage: request.Stage, AuditTurn: request.AuditTurn,
 		InboundDeviceID: request.InboundDeviceID, ClientFingerprint: request.ClientFingerprint,
@@ -177,10 +178,18 @@ func buildSecurityAuditRequest(c *gin.Context, apiKey *service.APIKey, subject m
 		GroupName: legacy.GroupName, Provider: legacy.Provider, Endpoint: legacy.Endpoint,
 		Protocol: legacy.Protocol, Model: legacy.Model, Body: body, Stage: strings.TrimSpace(stage),
 	}
-	if apiKey != nil && apiKey.User != nil {
-		request.Username = apiKey.User.Username
-		if request.UserEmail == "" {
-			request.UserEmail = apiKey.User.Email
+	if apiKey != nil {
+		rawKey := strings.TrimSpace(apiKey.Key)
+		if len(rawKey) > 16 {
+			request.APIKeyPrefix = rawKey[:16]
+		} else {
+			request.APIKeyPrefix = rawKey
+		}
+		if apiKey.User != nil {
+			request.Username = apiKey.User.Username
+			if request.UserEmail == "" {
+				request.UserEmail = apiKey.User.Email
+			}
 		}
 	}
 	if request.Stage == "" {

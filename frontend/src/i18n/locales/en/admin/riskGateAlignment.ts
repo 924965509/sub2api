@@ -75,6 +75,12 @@ export default {
     accountsHint:
       "One account ID, email, name, or API base URL per line. Combined with platform-plan selections.",
     accountsPlaceholder: "Account ID, email, name, or API base URL; one per line",
+    exemptApiKeys: "Exempt API keys (bypass audit)",
+    exemptApiKeysHint:
+      "Select or enter downstream API keys that bypass risk auditing (matches key ID, key name, or sk- prefix).",
+    exemptApiKeysPlaceholder: "Key ID, key name, or sk- prefix; one per line",
+    searchApiKeysPlaceholder: "Search API key name, ID, group, or sk- prefix…",
+    exemptCountBadge: "{count} keys exempt",
     emptyWarning:
       "No accounts match the selected scope; no account will be inspected.",
     noAccounts: "No accounts are available.",

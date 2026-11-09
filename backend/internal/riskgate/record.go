@@ -27,7 +27,7 @@ func (e *Engine) RecordUpstreamRefusal(ctx context.Context, event service.Upstre
 	if len(cfg.Scope.AccountIDs) > 0 || len(cfg.Scope.AccountPlatformPlans) > 0 {
 		return
 	}
-	if !cfg.inScopeRequest(securityaudit.Request{GroupID: event.GroupID, Provider: event.Provider, SelectedAccountID: event.SelectedAccountID, SelectedAccountPlan: event.SelectedAccountPlan, SelectedAccountName: event.SelectedAccountName, SelectedAccountEmail: event.SelectedAccountEmail, SelectedAccountPlatform: event.SelectedAccountPlatform}) {
+	if !cfg.inScopeRequest(securityaudit.Request{APIKeyID: event.APIKeyID, GroupID: event.GroupID, Provider: event.Provider, SelectedAccountID: event.SelectedAccountID, SelectedAccountPlan: event.SelectedAccountPlan, SelectedAccountName: event.SelectedAccountName, SelectedAccountEmail: event.SelectedAccountEmail, SelectedAccountPlatform: event.SelectedAccountPlatform}) {
 		return
 	}
 	defer func() { _ = recover() }()

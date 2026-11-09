@@ -190,6 +190,12 @@ func (e *Engine) Decide(ctx context.Context, req securityaudit.Request) *securit
 	if cfg.EffectiveMode() == ModeOff {
 		return nil
 	}
+	if cfg.isExemptAPIKey(req) {
+		if req.SelectedAccountID == 0 && e.audit != nil {
+			e.audit.RecordDecision(req, "passed", "scope", GateResult{}, false, e.clock.Now())
+		}
+		return nil
+	}
 	// Scope restricted to actual upstream accounts is evaluated by the selected-
 	// account hook, never guessed from the inbound group/provider.
 	if cfg.hasAccountScope() && req.SelectedAccountID == 0 {

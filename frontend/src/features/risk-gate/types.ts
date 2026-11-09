@@ -125,6 +125,7 @@ export interface ScopeConfig {
   openai_platform_enabled?: boolean;
   account_platform_plans?: string[] | null;
   account_ids?: string[] | null;
+  exempt_api_keys?: string[] | null;
 }
 
 export interface RiskGateConfig {
@@ -240,10 +241,19 @@ export interface ScopeOption {
   count: number;
 }
 
+export interface ScopeAPIKey {
+  id: string;
+  name: string;
+  key_prefix?: string;
+  group_name?: string;
+  status?: string;
+}
+
 export interface ScopeInventory {
   accounts_total: number;
   accounts: ScopeAccount[];
   account_platform_plan_options: ScopeOption[];
+  api_keys?: ScopeAPIKey[];
 }
 
 export interface GateHitRow {

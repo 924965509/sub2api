@@ -80,10 +80,18 @@ type ScopeOption struct {
 	Label string `json:"label"`
 	Count int    `json:"count"`
 }
+type ScopeAPIKey struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	KeyPrefix string `json:"key_prefix,omitempty"`
+	GroupName string `json:"group_name,omitempty"`
+	Status    string `json:"status,omitempty"`
+}
 type ScopeInventory struct {
 	AccountsTotal int            `json:"accounts_total"`
 	Accounts      []ScopeAccount `json:"accounts"`
 	Options       []ScopeOption  `json:"account_platform_plan_options"`
+	APIKeys       []ScopeAPIKey  `json:"api_keys"`
 	Truncated     bool           `json:"truncated"`
 }
 
@@ -129,7 +137,7 @@ func sanitizeScopeBaseURL(raw string) string {
 	return strings.TrimRight(u.String(), "/")
 }
 func (s *AdminService) ScopeInventory(ctx context.Context) (ScopeInventory, error) {
-	result := ScopeInventory{Accounts: []ScopeAccount{}, Options: []ScopeOption{}}
+	result := ScopeInventory{Accounts: []ScopeAccount{}, Options: []ScopeOption{}, APIKeys: []ScopeAPIKey{}}
 	if s == nil || s.config == nil || s.config.db == nil {
 		return result, invalidConfig("账号数据库不可用")
 	}
@@ -168,7 +176,21 @@ func (s *AdminService) ScopeInventory(ctx context.Context) (ScopeInventory, erro
 		result.Options = append(result.Options, ScopeOption{ID: key, Label: strings.ReplaceAll(key, ":", " · "), Count: count})
 	}
 	sort.Slice(result.Options, func(i, j int) bool { return result.Options[i].ID < result.Options[j].ID })
-	return result, rows.Err()
+	if err = rows.Err(); err != nil {
+		return result, err
+	}
+	if keyRows, keyErr := s.config.db.QueryContext(ctx, `SELECT k.id,COALESCE(k.name,''),CASE WHEN LENGTH(COALESCE(k.key,''))>10 THEN LEFT(k.key,10)||'...' ELSE COALESCE(k.key,'') END,COALESCE(g.name,''),COALESCE(k.status,'active') FROM api_keys k LEFT JOIN groups g ON g.id=k.group_id WHERE k.deleted_at IS NULL ORDER BY k.id LIMIT 10000`); keyErr == nil {
+		defer keyRows.Close()
+		for keyRows.Next() {
+			var k ScopeAPIKey
+			var keyID int64
+			if scanErr := keyRows.Scan(&keyID, &k.Name, &k.KeyPrefix, &k.GroupName, &k.Status); scanErr == nil {
+				k.ID = fmt.Sprint(keyID)
+				result.APIKeys = append(result.APIKeys, k)
+			}
+		}
+	}
+	return result, nil
 }
 
 // configQuestionsJSON is also useful to protocol adapters that need to build a

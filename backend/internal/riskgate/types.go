@@ -262,6 +262,7 @@ type ScopeConfig struct {
 	OpenAIPlatformEnabled bool     `json:"openai_platform_enabled"`
 	AccountPlatformPlans  []string `json:"account_platform_plans"`
 	AccountIDs            []string `json:"account_ids"`
+	ExemptAPIKeys         []string `json:"exempt_api_keys"`
 	CoverageSupported     bool     `json:"coverage_supported"`
 }
 
