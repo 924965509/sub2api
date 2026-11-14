@@ -84,3 +84,30 @@ func TestRewriteOpenAIChannelCacheTransferJSONToCacheCreationPreservesExistingWr
 	require.Equal(t, int64(250), gjson.GetBytes(got, "usage.cache_creation_input_tokens").Int())
 	require.Equal(t, int64(1000), gjson.GetBytes(got, "usage.input_tokens").Int())
 }
+
+func TestChannelCacheTransferOpenAICacheCreationPreserves12hTTLBreakdown(t *testing.T) {
+	account := channelCacheAccount(25, "cache_creation", nil)
+	usage := OpenAIUsage{
+		InputTokens:                 1000,
+		CacheCreationInputTokens:    100,
+		CacheCreation30mInputTokens: 20,
+		CacheCreation12hInputTokens: 80,
+		CacheReadInputTokens:        600,
+	}
+	amount, target := applyChannelCacheTransferOpenAIUsage(account, "gpt-5.6-terra", &usage)
+	require.Equal(t, 150, amount)
+	require.Equal(t, channelCacheTransferTargetCacheCreation, target)
+	require.Equal(t, 450, usage.CacheReadInputTokens)
+	require.Equal(t, 250, usage.CacheCreationInputTokens)
+	require.Equal(t, 170, usage.CacheCreation30mInputTokens)
+	require.Equal(t, 80, usage.CacheCreation12hInputTokens)
+
+	body := []byte("{\"id\":\"resp_1\",\"usage\":{\"input_tokens\":1000,\"output_tokens\":10,\"input_tokens_details\":{\"cached_tokens\":600,\"cache_write_tokens\":100,\"cache_write_tokens_details\":{\"ttl_30m_tokens\":20,\"ttl_12h_tokens\":80}}}}")
+	got, changed := rewriteOpenAIChannelCacheTransferJSON(body, account, "gpt-5.6-terra")
+	require.True(t, changed)
+	require.Equal(t, int64(450), gjson.GetBytes(got, "usage.input_tokens_details.cached_tokens").Int())
+	require.Equal(t, int64(250), gjson.GetBytes(got, "usage.input_tokens_details.cache_write_tokens").Int())
+	require.Equal(t, int64(170), gjson.GetBytes(got, "usage.input_tokens_details.cache_write_tokens_details.ttl_30m_tokens").Int())
+	require.Equal(t, int64(80), gjson.GetBytes(got, "usage.input_tokens_details.cache_write_tokens_details.ttl_12h_tokens").Int())
+	require.Equal(t, int64(250), gjson.GetBytes(got, "usage.cache_creation_input_tokens").Int())
+}

@@ -170,7 +170,14 @@ func applyChannelCacheTransferOpenAIUsage(account *Account, requestModel string,
 
 	usage.CacheReadInputTokens -= amount
 	if cfg.Target == channelCacheTransferTargetCacheCreation {
+		hadTTLBreakdown := usage.CacheCreationInputTokens > 0 &&
+			usage.CacheCreation30mInputTokens >= 0 &&
+			usage.CacheCreation12hInputTokens >= 0 &&
+			usage.CacheCreation30mInputTokens+usage.CacheCreation12hInputTokens == usage.CacheCreationInputTokens
 		usage.CacheCreationInputTokens += amount
+		if hadTTLBreakdown {
+			usage.CacheCreation30mInputTokens += amount
+		}
 	}
 	return amount, cfg.Target
 }
@@ -317,6 +324,13 @@ func addOpenAICacheCreationTokens(usageObj map[string]any, value int) {
 		}
 		if !updated {
 			details["cache_write_tokens"] = existingTotal + value
+		}
+		if writeDetails, ok := details["cache_write_tokens_details"].(map[string]any); ok {
+			if short, okS := parseSSEUsageInt(writeDetails["ttl_30m_tokens"]); okS {
+				if long, okL := parseSSEUsageInt(writeDetails["ttl_12h_tokens"]); okL && short >= 0 && long >= 0 {
+					writeDetails["ttl_30m_tokens"] = short + value
+				}
+			}
 		}
 		break
 	}
