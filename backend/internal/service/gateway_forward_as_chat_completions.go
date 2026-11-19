@@ -363,16 +363,9 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 
 	// Update outward usage from accumulated delta. Billing keeps the raw usage
 	// in ForwardResult and applies the channel cache transfer exactly once later.
-	if usage.InputTokens > 0 || usage.OutputTokens > 0 {
-		clientUsage := usage
-		applyChannelCacheTransferClaudeUsage(cacheAccount, originalModel, &clientUsage)
-		finalResp.Usage = apicompat.AnthropicUsage{
-			InputTokens:              clientUsage.InputTokens,
-			OutputTokens:             clientUsage.OutputTokens,
-			CacheCreationInputTokens: clientUsage.CacheCreationInputTokens,
-			CacheReadInputTokens:     clientUsage.CacheReadInputTokens,
-		}
-	}
+	clientUsage := usage
+	applyChannelCacheTransferClaudeUsage(cacheAccount, originalModel, &clientUsage)
+	normalizeAnthropicEventUsageForResponses(&apicompat.AnthropicStreamEvent{Message: finalResp}, clientUsage)
 
 	// Chain: Anthropic → Responses → Chat Completions
 	responsesResp := apicompat.AnthropicToResponsesResponse(finalResp)

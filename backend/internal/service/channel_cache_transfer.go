@@ -143,6 +143,9 @@ func applyChannelCacheTransferClaudeUsage(account *Account, requestModel string,
 	usage.CacheReadInputTokens -= amount
 	switch cfg.Target {
 	case channelCacheTransferTargetCacheCreation:
+		if usage.CacheCreationInputTokens <= 0 && (usage.CacheCreation5mTokens > 0 || usage.CacheCreation1hTokens > 0) {
+			usage.CacheCreationInputTokens = max(usage.CacheCreation5mTokens, 0) + max(usage.CacheCreation1hTokens, 0)
+		}
 		usage.CacheCreationInputTokens += amount
 		usage.CacheCreation5mTokens += amount
 	default:
@@ -170,13 +173,22 @@ func applyChannelCacheTransferOpenAIUsage(account *Account, requestModel string,
 
 	usage.CacheReadInputTokens -= amount
 	if cfg.Target == channelCacheTransferTargetCacheCreation {
-		hadTTLBreakdown := usage.CacheCreationInputTokens > 0 &&
+		if usage.CacheCreationInputTokens <= 0 && (usage.CacheCreation5mTokens > 0 || usage.CacheCreation1hTokens > 0) {
+			usage.CacheCreationInputTokens = max(usage.CacheCreation5mTokens, 0) + max(usage.CacheCreation1hTokens, 0)
+		}
+		hadOpenAITTLBreakdown := usage.CacheCreationInputTokens > 0 &&
 			usage.CacheCreation30mInputTokens >= 0 &&
 			usage.CacheCreation12hInputTokens >= 0 &&
 			usage.CacheCreation30mInputTokens+usage.CacheCreation12hInputTokens == usage.CacheCreationInputTokens
+		hadAnthropicTTLBreakdown := usage.CacheCreationInputTokens > 0 &&
+			usage.CacheCreation5mTokens >= 0 &&
+			usage.CacheCreation1hTokens >= 0 &&
+			usage.CacheCreation5mTokens+usage.CacheCreation1hTokens == usage.CacheCreationInputTokens
 		usage.CacheCreationInputTokens += amount
-		if hadTTLBreakdown {
+		if hadOpenAITTLBreakdown {
 			usage.CacheCreation30mInputTokens += amount
+		} else if hadAnthropicTTLBreakdown {
+			usage.CacheCreation5mTokens += amount
 		}
 	}
 	return amount, cfg.Target

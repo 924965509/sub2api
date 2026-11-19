@@ -111,3 +111,26 @@ func TestChannelCacheTransferOpenAICacheCreationPreserves12hTTLBreakdown(t *test
 	require.Equal(t, int64(80), gjson.GetBytes(got, "usage.input_tokens_details.cache_write_tokens_details.ttl_12h_tokens").Int())
 	require.Equal(t, int64(250), gjson.GetBytes(got, "usage.cache_creation_input_tokens").Int())
 }
+
+func TestChannelCacheTransferOpenAICacheCreationPreservesAnthropic5m1hTTLBreakdown(t *testing.T) {
+	account := channelCacheAccount(25, "cache_creation", nil)
+	usage := OpenAIUsage{
+		InputTokens:           1000,
+		CacheCreation1hTokens: 100,
+		CacheReadInputTokens:  600,
+	}
+	amount, target := applyChannelCacheTransferOpenAIUsage(account, "claude-opus-4-6", &usage)
+	require.Equal(t, 150, amount)
+	require.Equal(t, channelCacheTransferTargetCacheCreation, target)
+	require.Equal(t, 450, usage.CacheReadInputTokens)
+	require.Equal(t, 250, usage.CacheCreationInputTokens)
+	require.Equal(t, 150, usage.CacheCreation5mTokens)
+	require.Equal(t, 100, usage.CacheCreation1hTokens)
+
+	tokens := usage.billingUsageTokens()
+	require.Equal(t, 300, tokens.InputTokens)
+	require.Equal(t, 250, tokens.CacheCreationTokens)
+	require.Equal(t, 150, tokens.CacheCreation5mTokens)
+	require.Equal(t, 100, tokens.CacheCreation1hTokens)
+	require.Equal(t, 450, tokens.CacheReadTokens)
+}
